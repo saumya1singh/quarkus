@@ -2,6 +2,7 @@ package io.quarkus.datasource.runtime;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 import io.quarkus.runtime.annotations.ConfigGroup;
 import io.quarkus.runtime.annotations.ConfigItem;
@@ -28,10 +29,16 @@ public class DevServicesBuildTimeConfig {
     public Optional<String> imageName;
 
     /**
-     * Generic properties that are passed into the DevServices database provider. These properties are provider
-     * specific.
+     * Generic properties that are added to the database connection URL.
      */
     @ConfigItem
     public Map<String, String> properties;
 
+    /**
+     * Optional fixed port the dev service will listen to.
+     * <p>
+     * If not defined, the port will be chosen randomly.
+     */
+    @ConfigItem
+    public OptionalInt port;
 }

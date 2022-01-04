@@ -30,6 +30,10 @@ on:
       - '.github/*.java'
       - '.github/*.conf'
 
+concurrency:
+  group: "workflow = ${{ github.workflow }}, ref = ${{ github.event.ref }}, pr = ${{ github.event.pull_request.id }}"
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.repository != 'quarkusio/quarkus' }}
+
 env:
   # Workaround testsuite locale issue
   LANG: en_US.UTF-8
@@ -42,17 +46,17 @@ jobs:
   ci-sanity-check:
     name: "CI Sanity Check"
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     steps:
       - name: Build
         run: sleep 30
   build-jdk11:
     name: "Initial JDK 11 Build"
     runs-on: ubuntu-latest
-    # Skip master in forks
+    # Skip main in forks
     # Skip draft PRs and those with WIP in the subject, rerun as soon as its removed
-    if: "(github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')) && ( \
+    if: "(github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')) && ( \
            github.event_name != 'pull_request' || ( \
              github.event.pull_request.draft == false && \
              github.event.pull_request.state != 'closed' && \
@@ -91,7 +95,7 @@ jobs:
           key: q2maven-${{ steps.get-date.outputs.date }}
       - name: Build
         run: |
-          mvn -T1C -e -B -DskipTests -DskipITs -Dinvoker.skip -Dno-format -Dtcks --settings .github/mvn-settings.xml clean install
+          ./mvnw -T1C -e -B -DskipTests -DskipITs -Dinvoker.skip -Dno-format -Dtcks --settings .github/mvn-settings.xml clean install
       - name: Verify extension dependencies
         shell: bash
         run: |
@@ -116,8 +120,8 @@ jobs:
   linux-jvm-tests:
     name: JVM Tests - JDK ${{matrix.java.name}}
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 240
     env:
@@ -173,7 +177,7 @@ jobs:
         shell: bash
         run: tar -xzf maven-repo.tgz -C ~
       - name: Build with Maven
-        run: eval mvn $JVM_TEST_MAVEN_OPTS install -pl !integration-tests/gradle -pl !integration-tests/maven -pl !integration-tests/devtools ${{ matrix.java.maven_args}}
+        run: eval ./mvnw $JVM_TEST_MAVEN_OPTS install -pl !integration-tests/gradle -pl !integration-tests/maven -pl !integration-tests/devtools ${{ matrix.java.maven_args}}
       - name: Prepare failure archive (if maven failed)
         if: failure()
         shell: bash
@@ -188,8 +192,8 @@ jobs:
   windows-jdk11-jvm-tests:
     name: JVM Tests - JDK 11 Windows
     runs-on: windows-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 180
     env:
@@ -212,7 +216,7 @@ jobs:
         run: tar -xzf maven-repo.tgz -C ~
       - name: Build with Maven
         shell: bash
-        run: mvn -B --settings .github/mvn-settings.xml -DskipDocs -Dformat.skip -pl !integration-tests/gradle -pl !integration-tests/maven -pl !integration-tests/devtools install
+        run: ./mvnw -B --settings .github/mvn-settings.xml -DskipDocs -Dformat.skip -pl !integration-tests/gradle -pl !integration-tests/maven -pl !integration-tests/devtools install
       - name: Prepare failure archive (if maven failed)
         if: failure()
         shell: bash
@@ -229,8 +233,8 @@ jobs:
   linux-jvm-maven-tests:
     name: Maven Tests - JDK ${{matrix.java.name}}
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 60
     strategy:
@@ -257,7 +261,7 @@ jobs:
         with:
           java-version: ${{ matrix.java.java-version }}
       - name: Run Maven integration tests
-        run: eval mvn $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/maven'
+        run: eval ./mvnw $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/maven'
       - name: Prepare failure archive (if maven failed)
         if: failure()
         shell: bash
@@ -272,8 +276,8 @@ jobs:
   windows-jdk11-jvm-maven-tests:
     name: Maven Tests - JDK 11 Windows
     runs-on: windows-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 60
     strategy:
@@ -295,7 +299,7 @@ jobs:
           java-version: 11
       - name: Run Maven integration tests
         shell: bash
-        run: mvn $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/maven'
+        run: ./mvnw $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/maven'
       - name: Prepare failure archive (if maven failed)
         if: failure()
         shell: bash
@@ -310,8 +314,8 @@ jobs:
   linux-jvm-gradle-tests:
     name: Gradle Tests - JDK ${{matrix.java.name}}
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 60
     strategy:
@@ -350,8 +354,8 @@ jobs:
   windows-jdk11-jvm-gradle-tests:
     name: Gradle Tests - JDK 11 Windows
     needs: build-jdk11
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     runs-on: windows-latest
     timeout-minutes: 80
     steps:
@@ -383,8 +387,8 @@ jobs:
   linux-jvm-devtools-tests:
     name: Devtools Tests - JDK ${{matrix.java.name}}
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 60
     strategy:
@@ -411,7 +415,7 @@ jobs:
         with:
           java-version: ${{ matrix.java.java-version }}
       - name: Run Devtools integration tests
-        run: eval mvn $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/devtools'
+        run: eval ./mvnw $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/devtools'
       - name: Prepare failure archive (if maven failed)
         if: failure()
         shell: bash
@@ -426,8 +430,8 @@ jobs:
   windows-jdk11-jvm-devtools-tests:
     name: Devtools Tests - JDK 11 Windows
     runs-on: windows-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     needs: build-jdk11
     timeout-minutes: 60
     strategy:
@@ -449,7 +453,7 @@ jobs:
           java-version: 11
       - name: Run Devtools integration tests
         shell: bash
-        run: mvn $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/devtools'
+        run: ./mvnw $JVM_TEST_MAVEN_OPTS install -pl 'integration-tests/devtools'
       - name: Prepare failure archive (if maven failed)
         if: failure()
         shell: bash
@@ -464,8 +468,8 @@ jobs:
   tcks-test:
     name: MicroProfile TCKs Tests
     needs: build-jdk11
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     runs-on: ubuntu-latest
     timeout-minutes: 150
 
@@ -498,7 +502,7 @@ jobs:
         run: mvn -B --settings ../tcks/.github/mvn-settings.xml install
         working-directory: ./resteasy-reactive-testsuite
       - name: Verify with Maven
-        run: mvn -B --settings .github/mvn-settings.xml -f tcks/pom.xml install
+        run: ../mvnw -B --settings .github/mvn-settings.xml -f tcks/pom.xml install
         working-directory: ./tcks
       - name: Prepare failure archive (if maven failed)
         if: failure()
@@ -514,8 +518,8 @@ jobs:
   native-tests-read-json-matrix:
     name: Native Tests - Read JSON matrix
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     outputs:
       matrix: ${{ steps.read.outputs.matrix }}
     steps:
@@ -530,8 +534,8 @@ jobs:
     name: Native Tests - ${{matrix.category}}
     needs: [build-jdk11, native-tests-read-json-matrix]
     runs-on: ubuntu-latest
-    # Skip master in forks
-    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/master')"
+    # Skip main in forks
+    if: "github.repository == 'quarkusio/quarkus' || !endsWith(github.ref, '/main')"
     # Ignore the following YAML Schema error
     timeout-minutes: ${{matrix.timeout}}
     strategy:
@@ -568,12 +572,12 @@ jobs:
           for i in $TEST_MODULES
           do modules+=("integration-tests/$i"); done
           IFS=,
-          eval mvn -pl "${modules[*]}" $NATIVE_TEST_MAVEN_OPTS
+          eval ./mvnw -pl "${modules[*]}" $NATIVE_TEST_MAVEN_OPTS
           # add the 'simple with spaces' project to the run of 'Misc1' by executing it explicitly
           # done because there is no good way to pass strings with empty values to the previous command
           # so this hack is as good as any
           if [ "$CATEGORY" == "Misc1" ]; then
-            mvn -Dnative -Dquarkus.native.container-build=true -B --settings .github/mvn-settings.xml -f 'integration-tests/simple with space/' verify
+            ./mvnw -Dnative -Dquarkus.native.container-build=true -B --settings .github/mvn-settings.xml -f 'integration-tests/simple with space/' verify
           fi
       - name: Prepare failure archive (if maven failed)
         if: failure()

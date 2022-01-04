@@ -2,10 +2,11 @@ package io.quarkus.registry.catalog.json;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.quarkus.registry.catalog.Category;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class JsonCategory implements Category {
 
     protected String id;
@@ -43,7 +44,7 @@ public class JsonCategory implements Category {
 
     @Override
     public Map<String, Object> getMetadata() {
-        return metadata;
+        return metadata == null ? metadata = new HashMap<>() : metadata;
     }
 
     public void setMetadata(Map<String, Object> metadata) {

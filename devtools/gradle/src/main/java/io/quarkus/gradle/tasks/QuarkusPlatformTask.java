@@ -38,7 +38,9 @@ public abstract class QuarkusPlatformTask extends QuarkusTask {
 
     private ExtensionCatalog extensionsCatalog(boolean limitExtensionsToImportedPlatforms, MessageWriter log) {
         final List<ArtifactCoords> platforms = importedPlatforms();
-        final ExtensionCatalogResolver catalogResolver = QuarkusProjectHelper.getCatalogResolver(log);
+        final ExtensionCatalogResolver catalogResolver = QuarkusProjectHelper.isRegistryClientEnabled()
+                ? QuarkusProjectHelper.getCatalogResolver(log)
+                : ExtensionCatalogResolver.empty();
         if (catalogResolver.hasRegistries()) {
             try {
                 return limitExtensionsToImportedPlatforms ? catalogResolver.resolveExtensionCatalog(platforms)

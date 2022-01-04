@@ -2,12 +2,14 @@ package io.quarkus.devtools.commands.handlers;
 
 import static io.quarkus.devtools.messagewriter.MessageIcons.ERROR_ICON;
 import static io.quarkus.devtools.project.extensions.Extensions.toCoords;
+import static io.quarkus.platform.catalog.processor.ExtensionProcessor.getExtendedKeywords;
+import static io.quarkus.platform.catalog.processor.ExtensionProcessor.getShortName;
+import static io.quarkus.platform.catalog.processor.ExtensionProcessor.isUnlisted;
 
-import io.quarkus.bootstrap.model.AppArtifactCoords;
-import io.quarkus.bootstrap.model.AppArtifactKey;
 import io.quarkus.devtools.commands.data.QuarkusCommandInvocation;
 import io.quarkus.devtools.commands.data.SelectionResult;
 import io.quarkus.devtools.project.extensions.Extensions;
+import io.quarkus.maven.ArtifactCoords;
 import io.quarkus.maven.ArtifactKey;
 import io.quarkus.registry.catalog.Extension;
 import java.util.ArrayList;
@@ -26,20 +28,20 @@ final class QuarkusCommandHandlers {
     private QuarkusCommandHandlers() {
     }
 
-    static List<AppArtifactCoords> computeCoordsFromQuery(final QuarkusCommandInvocation invocation,
+    static List<ArtifactCoords> computeCoordsFromQuery(final QuarkusCommandInvocation invocation,
             final Set<String> extensionsQuery) {
-        final ArrayList<AppArtifactCoords> builder = new ArrayList<>();
+        final ArrayList<ArtifactCoords> builder = new ArrayList<>();
         for (String query : extensionsQuery) {
             final int countColons = StringUtils.countMatches(query, ":");
             if (countColons == 1) {
-                builder.add(toCoords(AppArtifactKey.fromString(query), null));
+                builder.add(toCoords(ArtifactKey.fromString(query), null));
             } else if (countColons > 1) {
-                builder.add(AppArtifactCoords.fromString(query));
+                builder.add(ArtifactCoords.fromString(query));
             } else {
                 Collection<Extension> extensions = invocation.getExtensionsCatalog().getExtensions();
                 SelectionResult result = select(query, extensions, false);
                 if (result.matches()) {
-                    final Set<AppArtifactCoords> withStrippedVersion = result.getExtensions().stream().map(Extensions::toCoords)
+                    final Set<ArtifactCoords> withStrippedVersion = result.getExtensions().stream().map(Extensions::toCoords)
                             .map(Extensions::stripVersion).collect(Collectors.toSet());
                     // We strip the version because those extensions are managed
                     builder.addAll(withStrippedVersion);
@@ -58,7 +60,7 @@ final class QuarkusCommandHandlers {
                                 .forEach(extension -> sb.append(System.lineSeparator()).append("     * ")
                                         .append(extension.managementKey()));
                         sb.append(System.lineSeparator())
-                                .append("     Be more specific e.g using the exact name or the full GAV.");
+                                .append("     try using the exact name or the full GAV (group id, artifact id, and version).");
                         invocation.log().info(sb.toString());
                         return null;
                     }
@@ -106,7 +108,7 @@ final class QuarkusCommandHandlers {
             listedExtensions.stream()
                     .filter(extension -> extension.getName().toLowerCase().contains(q)
                             || extension.getArtifact().getArtifactId().toLowerCase().contains(q)
-                            || extension.getShortName().toLowerCase().contains(q))
+                            || getShortName(extension).toLowerCase().contains(q))
                     .forEach(e -> matches.putIfAbsent(e.getArtifact().getKey(), e));
             // Even if we have a single partial match, if the name, artifactId and short names are ambiguous, so not
             // consider it as a match.
@@ -117,7 +119,7 @@ final class QuarkusCommandHandlers {
             // find by labels
             if (labelLookup) {
                 listedExtensions.stream()
-                        .filter(extension -> extension.labelsForMatching().contains(q))
+                        .filter(extension -> getExtendedKeywords(extension).contains(q))
                         .forEach(e -> matches.put(e.getArtifact().getKey(), e));
             }
             return new SelectionResult(matches.values(), false);
@@ -129,8 +131,8 @@ final class QuarkusCommandHandlers {
             listedExtensions.stream()
                     .filter(extension -> pattern.matcher(extension.getName().toLowerCase()).matches()
                             || pattern.matcher(extension.getArtifact().getArtifactId().toLowerCase()).matches()
-                            || pattern.matcher(extension.getShortName().toLowerCase()).matches()
-                            || matchLabels(pattern, extension.getKeywords()))
+                            || pattern.matcher(getShortName(extension).toLowerCase()).matches()
+                            || matchLabels(pattern, getExtendedKeywords(extension)))
                     .forEach(e -> matches.putIfAbsent(e.getArtifact().getKey(), e));
         }
         return new SelectionResult(matches.values(), !matches.isEmpty());
@@ -138,7 +140,7 @@ final class QuarkusCommandHandlers {
 
     private static List<Extension> getListedExtensions(final Collection<Extension> allExtensions) {
         return allExtensions.stream()
-                .filter(e -> !e.isUnlisted()).collect(Collectors.toList());
+                .filter(e -> !isUnlisted(e)).collect(Collectors.toList());
     }
 
     private static boolean matchLabels(Pattern pattern, List<String> labels) {
@@ -209,7 +211,7 @@ final class QuarkusCommandHandlers {
     }
 
     private static boolean matchesShortName(Extension extension, String q) {
-        return q.equalsIgnoreCase(extension.getShortName());
+        return q.equalsIgnoreCase(getShortName(extension));
     }
 
     private static boolean matchesArtifactId(String artifactId, String q) {

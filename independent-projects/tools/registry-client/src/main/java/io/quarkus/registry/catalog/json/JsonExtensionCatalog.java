@@ -11,7 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class JsonExtensionCatalog extends JsonExtensionOrigin implements ExtensionCatalog {
 
     private String quarkusCore;
@@ -74,6 +74,13 @@ public class JsonExtensionCatalog extends JsonExtensionOrigin implements Extensi
 
     public void setCategories(List<Category> categories) {
         this.categories = categories;
+    }
+
+    public void addCategory(Category c) {
+        if (categories == null) {
+            categories = new ArrayList<>();
+        }
+        categories.add(c);
     }
 
     @Override

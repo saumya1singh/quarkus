@@ -333,7 +333,8 @@ public class QuarkusProdModeTest
             TestResourceManager manager = new TestResourceManager(extensionContext.getRequiredTestClass());
             manager.init();
             testResourceProperties = manager.start();
-            store.put(TestResourceManager.class.getName(), new ExtensionContext.Store.CloseableResource() {
+            store.put(TestResourceManager.class.getName(), manager);
+            store.put(TestResourceManager.CLOSEABLE_NAME, new ExtensionContext.Store.CloseableResource() {
 
                 @Override
                 public void close() throws Throwable {
@@ -375,6 +376,7 @@ public class QuarkusProdModeTest
                     .setApplicationRoot(deploymentDir)
                     .setMode(QuarkusBootstrap.Mode.PROD)
                     .setLocalProjectDiscovery(true)
+                    .setIsolateDeployment(true)
                     .addExcludedPath(testLocation)
                     .setProjectRoot(testLocation)
                     .setTargetDirectory(buildDir)

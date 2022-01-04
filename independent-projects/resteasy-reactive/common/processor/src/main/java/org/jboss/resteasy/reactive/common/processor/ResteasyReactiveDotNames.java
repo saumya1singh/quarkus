@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -72,7 +73,9 @@ import javax.ws.rs.ext.WriterInterceptor;
 import javax.ws.rs.sse.Sse;
 import javax.ws.rs.sse.SseEventSink;
 import org.jboss.jandex.DotName;
+import org.jboss.resteasy.reactive.DummyElementType;
 import org.jboss.resteasy.reactive.MultipartForm;
+import org.jboss.resteasy.reactive.PartType;
 import org.jboss.resteasy.reactive.RestCookie;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.RestHeader;
@@ -114,6 +117,7 @@ public final class ResteasyReactiveDotNames {
     public static final DotName REST_HEADER_PARAM = DotName.createSimple(RestHeader.class.getName());
     public static final DotName REST_FORM_PARAM = DotName.createSimple(RestForm.class.getName());
     public static final DotName MULTI_PART_FORM_PARAM = DotName.createSimple(MultipartForm.class.getName());
+    public static final DotName PART_TYPE_NAME = DotName.createSimple(PartType.class.getName());
     public static final DotName REST_MATRIX_PARAM = DotName.createSimple(RestMatrix.class.getName());
     public static final DotName REST_COOKIE_PARAM = DotName.createSimple(RestCookie.class.getName());
     public static final DotName GET = DotName.createSimple(javax.ws.rs.GET.class.getName());
@@ -162,8 +166,10 @@ public final class ResteasyReactiveDotNames {
     public static final DotName SET = DotName.createSimple(Set.class.getName());
     public static final DotName SORTED_SET = DotName.createSimple(SortedSet.class.getName());
     public static final DotName MAP = DotName.createSimple(Map.class.getName());
+    public static final DotName DUMMY_ELEMENT_TYPE = DotName.createSimple(DummyElementType.class.getName());
     public static final DotName MULTI_VALUED_MAP = DotName.createSimple(MultivaluedMap.class.getName());
     public static final DotName PATH_SEGMENT = DotName.createSimple(PathSegment.class.getName());
+    public static final DotName LOCAL_DATE = DotName.createSimple(LocalDate.class.getName());
 
     public static final DotName UNI = DotName.createSimple(Uni.class.getName());
     public static final DotName MULTI = DotName.createSimple(Multi.class.getName());

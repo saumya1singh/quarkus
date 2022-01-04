@@ -1,7 +1,7 @@
 ////
 This guide is maintained in the main Quarkus repository
 and pull requests should be submitted there:
-https://github.com/quarkusio/quarkus/tree/master/docs/src/main/asciidoc
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
 ////
 = Quarkus - Qute Reference Guide
 
@@ -473,6 +473,17 @@ If a part of an expression resolves to a `CompletionStage`, the resolution conti
 For example, if there is an expression `{foo.size}` and `foo` resolves to `CompletionStage<List<String>>` then `size` is resolved against the completed result, i.e. `List<String>`.
 If a part of an expression resolves to a `Uni`, a `CompletionStage` is first created from `Uni` using `Uni#subscribeAsCompletionStage()` and then evaluated as described above.
 
+==== Missing Properties
+
+It can happen that an expression may not be evaluated at runtime.
+For example, if there is an expression `{person.age}` and there is no property `age` declared on the `Person` class.
+Qute outputs the special constant `NOT_FOUND` in this case by default.
+However, it's possible to change the default strategy via the `quarkus.qute.property-not-found-strategy` as described in the <<configuration-reference>>.
+
+NOTE: Similar errors are detected at build time if <<typesafe_expressions>> and <<typesafe_templates>> are used.
+
+TIP: Alternatively, the _elvis operator_ can be used to output the default value in case the property cannot be resolved or resolves to `null`: `{person.age ?: 10}` would output `10`. And for the loop section, the `orEmpty` resolver can be used. See also <<built-in-resolvers>>.
+
 [[sections]]
 === Sections
 
@@ -506,7 +517,7 @@ A section helper that defines the logic of a section can "execute" any of the bl
 [[loop_section]]
 ==== Loop Section
 
-The loop section makes it possible to iterate over an instance of `Iterable`, `Map` 's entry set, `Stream` and an Integer.
+The loop section makes it possible to iterate over an instance of `Iterable`, `Map` 's entry set, `Stream` and an `Integer`.
 It has two flavors.
 The first one is using the `each` name alias.
 
@@ -535,7 +546,7 @@ It's also possible to access the iteration metadata inside the loop:
   {count}. {it.name} <1>
 {/each}
 ----
-<1> `count` represents one-based index. Metadata also include zero-based `index`, `hasNext`, `odd`, `even`.
+<1> `count` represents one-based index. Metadata also include zero-based `index`, `hasNext`, `odd` and `even`.
 
 The `for` statement also works with integers, starting from 1. In the example below, considering that `total = 3`:
 
@@ -831,29 +842,46 @@ Template inheritance makes it possible to reuse template layouts.
 <title>{#insert title}Default Title{/}</title> <1>
 </head>
 <body>
-  {#insert body}No body!{/} <2>
+  {#insert}No body!{/} <2>
 </body>
 </html>
 ----
 <1> `insert` sections are used to specify parts that could be overridden by a template that includes the given template.
-<2> An `insert` section may define the default content that is rendered if not overridden.
+<2> An `insert` section may define the default content that is rendered if not overridden. If no name parameter is supplied then the main block of the relevant `{#include}` section is used.
 
 .Template "detail"
 [source,html]
 ----
 {#include base} <1>
   {#title}My Title{/title} <2>
-  {#body}
-    <div>
-      My body.
-    </div>
-  {/body}
+  <div> <3>
+    My body.
+  </div>
 {/include}
 ----
 <1> `include` section is used to specify the extended template.
 <2> Nested blocks are used to specify the parts that should be overridden.
+<3> The content of the main block is used for an `{#insert}` section with no name parameter specified.
 
 NOTE: Section blocks can also define an optional end tag - `{/title}`.
+
+==== Eval Section
+
+This section can be used to parse and evaluate a template dynamically.
+The behavior is very similar to the <<include_helper>> but:
+
+1. The template content is passed directly, i.e. not obtained via an `io.quarkus.qute.TemplateLocator`,
+2. It's not possible to override parts of the evaluated template.
+
+[source,html]
+----
+{#eval myData.template name='Mia' /} <1><2><3>
+----
+<1> The result of `myData.template` will be used as the template. The template is executed with the <<current_context_object>>, i.e. can reference data from the template it's included into.
+<2> It's also possible to define optional parameters that can be used in the evaluated template.
+<3> The content of the section is always ignored. 
+
+NOTE: The evaluated template is parsed and evaluated every time the section is executed. In other words, it's not possible to cache the parsed value to conserve resources and optimize the performance.
 
 [[user_tags]]
 ==== User-defined Tags
@@ -1077,6 +1105,8 @@ For the expression `inject:foo.price` the implementation class of the injected b
 
 NOTE: A `ValueResolver` is also generated for all beans annotated with `@Named` so that it's possible to access its properties without reflection.
 
+TIP: If your application serves link:http-reference[HTTP requests] you can also inject the current `io.vertx.core.http.HttpServerRequest` via the `inject` namespace, e.g. `{inject:vertxRequest.getParam('foo')}`. 
+
 [[typesafe_expressions]]
 === Type-safe Expressions
 
@@ -1138,7 +1168,7 @@ Note that sections can override names that would otherwise match a parameter dec
  
 [[typesafe_templates]]
 === Type-safe Templates
-You can also declare your templates in your Java code.
+You can also define type-safe templates in your Java code.
 If using <<resteasy_integration,templates in JAX-RS resources>>, you can rely on the following convention:
 
 - Organise your template files in the `/src/main/resources/templates` directory, by grouping them into one directory per resource class. So, if
@@ -1183,6 +1213,9 @@ public class ItemResource {
 <1> Declare a method that gives us a `TemplateInstance` for `templates/ItemResource/item.html` and declare its `Item item` parameter so we can validate the template.
 <2> The `item` parameter is automatically turned into a <<typesafe_expressions,parameter declaration>> and so all expressions that reference this name will be validated.
 <3> Make the `Item` object accessible in the template.
+
+TIP: By default, the templates defined in a class annotated with `@CheckedTemplate` can only contain type-safe expressions, i.e. expressions that can be validated at build time. You can use `@CheckedTemplate(requireTypeSafeExpressions = false)` to relax this requirement.
+
  
 You can also declare a top-level Java class annotated with `@CheckedTemplate`:
 
@@ -1242,11 +1275,9 @@ A template extension method:
 
 * must not be `private`
 * must be static, 
-* must not return `void`,
-* must accept at least one parameter, unless the namespace is specified.
- 
-The class of the first parameter is used to match the base object unless the namespace is specified. 
-In such case, the namespace is used to match an expression.
+* must not return `void`.
+
+If there is no namespace defined the class of the first parameter that is not annotated with `@TemplateAttribute` is used to match the base object. Otherwise the namespace is used to match an expression.
 
 The method name is used to match the property name by default. 
 However, it is possible to specify the matching name with `TemplateExtension#matchName()`.
@@ -1289,9 +1320,11 @@ This template extension method makes it possible to render the following templat
 
 ==== Method Parameters
 
-An extension method may accept multiple parameters.
-If no namespace is specified the first parameter is always used to pass the base object, i.e. `org.acme.Item` in the first example.
-Other parameters are resolved when rendering the template and passed to the extension method.
+An extension method may declare parameters.
+If no namespace is specified then the first parameter that is not annotated with `@TemplateAttribute` is used to pass the base object, i.e. `org.acme.Item` in the first example.
+If matching any name or using a regular expression then a string method parameter needs to be used to pass the property name.
+Parameters annotated with `@TemplateAttribute` are obtained via `TemplateInstance#getAttribute()`.
+All other parameters are resolved when rendering the template and passed to the extension method.
 
 .Multiple Parameters Example
 [source,java]
@@ -1345,7 +1378,8 @@ These extension methods can be used as follows.
 <1> The output is `Hello world!`
 <2> The output is `olleh`
 
-==== Built-in Template Extension
+[[built-in-template-extension]]
+==== Built-in Template Extensions
 
 Quarkus provides a set of built-in extension methods.
 
@@ -1373,12 +1407,24 @@ TIP: A map value can be also accessed directly: `{map.myKey}`. Use the bracket n
 * `get(index)`: Returns the element at the specified position in a list
 ** `{list.get(0)}`
 
+* `reversed`: Returns a reversed iterator over a list
+** `{#for r in recordsList.reversed}`
+
 TIP: A list element can be accessed directly: `{list.10}` or `{list[10]}`.
 
 ===== Numbers
 
 * `mod`: Modulo operation
 ** `{#if counter.mod(5) == 0}`
+
+==== Strings
+
+* `fmt` or `format`: format the string instance via `java.lang.String.format()`
+** `{myStr.fmt("arg1","arg2")}`
+** `{myStr.format(locale,arg1)}`
+* `str:fmt` or `str:format`: format the supplied string value via `java.lang.String.format()`
+** `{str:format("Hello %s!",name)}`
+** `{str:fmt(locale,'%tA',now)}`
 
 ===== Config 
 

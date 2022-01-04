@@ -11,11 +11,6 @@ var streamingPath = myself.attr('data-streamingPath');
 if (typeof streamingPath === "undefined" ) {
    var streamingPath = "/dev/logstream";
 }
-// See if we should show on start
-var showOnStart = myself.attr('data-showOnStart');   
-if (typeof showOnStart === "undefined" ) {
-   var showOnStart = false;
-}
 
 var zoom = 0.90;
 var linespace = 1.00;
@@ -34,9 +29,6 @@ var filter = "";
 var localstoragekey = "quarkus_logging_manager_state";
 
 $('document').ready(function () {
-    if(!showOnStart){
-        hideLog();
-    }
     loadSettings();
     
     openSocket();
@@ -44,15 +36,6 @@ $('document').ready(function () {
     window.onbeforeunload = function () {
         closeSocket();
     };
-    
-    logstreamResizeButton.addEventListener("mousedown", function(e){
-        m_pos = e.y;
-        document.addEventListener("mousemove", resize, false);   
-    }, false);
-
-    document.addEventListener("mouseup", function(){
-        document.removeEventListener("mousemove", resize, false);
-    }, false);
     
     logstreamStopStartButton.addEventListener("click", stopStartEvent);
     logstreamClearLogButton.addEventListener("click", clearScreenEvent);
@@ -164,29 +147,6 @@ function saveSettings(){
     localStorage.setItem(localstoragekey, JSON.stringify(state));
 }
 
-function showLog(){
-    $("#logstreamFooter").css("height", "33vh");
-    $("#logstreamManager").show();
-    $("#logstreamViewLogButton").hide();
-    $("#logstreamHideLogButton").show();
-    var element = document.getElementById("logstreamManager");
-    element.scrollIntoView({block: "end"});
-}
-
-function hideLog(){
-    $("#logstreamFooter").css("height", "unset");
-    $("#logstreamViewLogButton").show();
-    $("#logstreamHideLogButton").hide();
-    $("#logstreamManager").hide();
-}
-
-function resize(e){
-    const dx = m_pos - e.y;
-    m_pos = e.y;
-    const panel = document.getElementById("logstreamFooter");
-    panel.style.height = (parseInt(getComputedStyle(panel, '').height) + dx) + "px";
-}
-
 function addControlCListener(){
     // Add listener to stop
     var ctrlDown = false,
@@ -203,7 +163,9 @@ function addControlCListener(){
     });
 
     $(document).keydown(function (e) {
-        if (ctrlDown && (e.keyCode === cKey))stopLog();
+        if (e.target.tagName === "BODY") {
+            if (ctrlDown && (e.keyCode === cKey))stopLog();
+        }
     });
 }
 
@@ -221,32 +183,38 @@ function addScrollListener(){
 }
 
 function addLineSpaceListener(){
-    $(document).keydown(function (event) {
-        if (event.shiftKey && event.keyCode === 38) {
-            lineSpaceIncreaseEvent();
-        }else if (event.shiftKey && event.keyCode === 40) {
-            lineSpaceDecreaseEvent();
+    $(document).keydown(function (e) {
+        if (e.target.tagName === "BODY") {
+            if (e.shiftKey && e.keyCode === 38) {
+                lineSpaceIncreaseEvent();
+            }else if (e.shiftKey && e.keyCode === 40) {
+                lineSpaceDecreaseEvent();
+            }
         }
     });
 }
 
 function addTabSizeListener(){
-    $(document).keydown(function (event) {
-        if (event.shiftKey && event.keyCode === 39) {
-            tabSpaceIncreaseEvent();
-        }else if (event.shiftKey && event.keyCode === 37) {
-            tabSpaceDecreaseEvent();
+    $(document).keydown(function (e) {
+        if (e.target.tagName === "BODY") {
+            if (e.shiftKey && e.keyCode === 39) {
+                tabSpaceIncreaseEvent();
+            }else if (e.shiftKey && e.keyCode === 37) {
+                tabSpaceDecreaseEvent();
+            }
         }
     });
 }
 
 function addEnterListener(){
     $(document).keydown(function (e) {
-        if (e.keyCode === 13 && !$('#logstreamFilterModal').hasClass('show')){
-            writeResponse("</br>");
-            var element = document.getElementById("logstreamLogTerminal");
-            element.scrollIntoView({block: "end"});
-        } 
+        if (e.target.tagName === "BODY") {
+            if (e.keyCode === 13 && !$('#logstreamFilterModal').hasClass('show')){
+                writeResponse("</br>");
+                var element = document.getElementById("logstreamLogTerminal");
+                element.scrollIntoView({block: "end"});
+            } 
+        }
     });
 }
 
@@ -503,25 +471,45 @@ function getLoggerClassName(loggerClassName){
     return "";
 }
 
-function getClassFullAbbreviatedName(sourceClassNameFull, sourceClassNameFullShort) {
+function getClassFullAbbreviatedName(sourceClassNameFull, lineNumber, sourceClassNameFullShort) {
     if($('#logstreamColumnsModalSourceClassFullAbbreviatedSwitch').is(":checked")){
-        return "<span class='text-secondary' data-toggle='tooltip' data-placement='top' title='" + sourceClassNameFull + "'>[" + sourceClassNameFullShort + "]</span>" + tab;
+        if (isClickableClassName(sourceClassNameFull)) {
+            return makeClickableClassNameLink(sourceClassNameFull, lineNumber, sourceClassNameFullShort);
+        }
+        return "<span class='text-secondary'>[" + sourceClassNameFullShort + "]</span>" + tab;
     }
     return "";
 }
 
-function getFullClassName(sourceClassNameFull) {
+function getFullClassName(sourceClassNameFull, lineNumber) {
     if($('#logstreamColumnsModalSourceClassFullSwitch').is(":checked")){
+        if (isClickableClassName(sourceClassNameFull)) {
+            return makeClickableClassNameLink(sourceClassNameFull, lineNumber, sourceClassNameFull);
+        }
         return "<span class='text-secondary'>[" + sourceClassNameFull + "]</span>" + tab;
     }
     return "";
 }
 
-function getClassName(className) {
+function getClassName(sourceClassNameFull, lineNumber, className) {
     if($('#logstreamColumnsModalSourceClassSwitch').is(":checked")){
+        if (isClickableClassName(sourceClassNameFull)) {
+            return makeClickableClassNameLink(sourceClassNameFull, lineNumber, className);
+        }
         return "<span class='text-secondary'>[" + className + "]</span>" + tab;
     }
     return "";
+}
+
+function isClickableClassName(className){
+    if (className !== undefined && appClassLang(className) && ideKnown()) {
+        return true;
+    }
+    return false;
+}
+
+function makeClickableClassNameLink(className, lineNumber, display){
+    return "<a class='text-secondary clickable-app-class' onclick='openInIDE(\"" + className + "\",\"" + lineNumber + "\");'>[" + display + "]</a>" + tab;
 }
 
 function getMethodName(methodName) {
@@ -596,7 +584,7 @@ function makeLink(message, protocol){
     return message.replace(url, link);    
 }
 
-function enhanceStacktrace(loggerName, stacktrace) {
+function enhanceStacktrace(stacktrace) {
     var enhanceStacktrace = [];
     var lines = stacktrace.split('\n');
     for (var i = 0; i < lines.length; i++) {
@@ -607,9 +595,18 @@ function enhanceStacktrace(loggerName, stacktrace) {
                 var parts = line.split(":");
                 line = "<b>" + parts[0] + ":</b>" + parts[1];
             } else {
-                var isMyClass = line.includes(loggerName);
-                if (isMyClass && loggerName) {
-                    line = '<b>' + line + '</b>';
+                if(!line.includes(".zig")){
+                    var parts = line.split(" ");
+                    // Make it clickable
+                    var classMethodFileNumber = parts[1];
+                    var classMethodFileNumberSplit = classMethodFileNumber.split("(");
+                    var classMethod = classMethodFileNumberSplit[0];
+                    var fileNumber = classMethodFileNumberSplit[1];
+                    givenClassName = classMethod.substring(0, classMethod.lastIndexOf('.'));
+                    if(isClickableClassName(givenClassName)){
+                        lineNumber = fileNumber.substring(fileNumber.lastIndexOf(':') + 1, fileNumber.lastIndexOf(')'));
+                        line = "<a class='text-wrap text-danger clickable-app-class' onclick='openInIDE(\"" + givenClassName + "\",\"" + lineNumber + "\");'><b>" + line + "</b></a>";
+                    }
                 }
                 line = space + space + space + space + space + space + line;
             }
@@ -681,9 +678,9 @@ function openSocket() {
                 + getLoggerNameAbbreviated(json.loggerNameShort)
                 + getLoggerName(json.loggerName)
                 + getLoggerClassName(json.loggerClassName)        
-                + getClassFullAbbreviatedName(json.sourceClassNameFull, json.sourceClassNameFullShort)
-                + getFullClassName(json.sourceClassNameFull)
-                + getClassName(json.sourceClassName)
+                + getClassFullAbbreviatedName(json.sourceClassNameFull, json.sourceLineNumber,json.sourceClassNameFullShort)
+                + getFullClassName(json.sourceClassNameFull,json.sourceLineNumber)
+                + getClassName(json.sourceClassNameFull,json.sourceLineNumber,json.sourceClassName)
                 + getMethodName(json.sourceMethodName)
                 + getFileName(json.sourceFileName)
                 + getLineNumber(json.sourceLineNumber)
@@ -695,7 +692,7 @@ function openSocket() {
                 
         if (json.stacktrace) {
             for (var i in json.stacktrace) {
-                var stacktrace = enhanceStacktrace(json.loggerName, json.stacktrace[i]);
+                var stacktrace = enhanceStacktrace(json.stacktrace[i]);
                 htmlLine = htmlLine + stacktrace;
             }
         }
