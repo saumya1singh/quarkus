@@ -315,6 +315,7 @@ public class MessageBundleProcessor {
             List<TypeCheckExcludeBuildItem> excludes,
             List<MessageBundleBuildItem> messageBundles,
             List<MessageBundleMethodBuildItem> messageBundleMethods,
+            List<TemplateExpressionMatchesBuildItem> expressionMatches,
             BuildProducer<IncorrectExpressionBuildItem> incorrectExpressions,
             BuildProducer<ImplicitValueResolverBuildItem> implicitClasses) {
 
@@ -356,7 +357,13 @@ public class MessageBundleProcessor {
 
                 for (Entry<TemplateAnalysis, Set<Expression>> exprEntry : expressions.entrySet()) {
 
-                    Map<Integer, Match> generatedIdsToMatches = new HashMap<>();
+                    Map<Integer, Match> generatedIdsToMatches = Collections.emptyMap();
+                    for (TemplateExpressionMatchesBuildItem templateExpressionMatchesBuildItem : expressionMatches) {
+                        if (templateExpressionMatchesBuildItem.templateGeneratedId.equals(exprEntry.getKey().generatedId)) {
+                            generatedIdsToMatches = templateExpressionMatchesBuildItem.getGeneratedIdsToMatches();
+                            break;
+                        }
+                    }
 
                     for (Expression expression : exprEntry.getValue()) {
                         // msg:hello_world(foo.name)
@@ -407,7 +414,7 @@ public class MessageBundleProcessor {
                                             incorrectExpressions, expression, index, implicitClassToMembersUsed,
                                             templateIdToPathFun, generatedIdsToMatches);
                                     Match match = results.get(param.toOriginalString());
-                                    if (match != null && !Types.isAssignableFrom(match.type(),
+                                    if (match != null && !match.isEmpty() && !Types.isAssignableFrom(match.type(),
                                             methodParams.get(idx), index)) {
                                         incorrectExpressions
                                                 .produce(new IncorrectExpressionBuildItem(expression.toOriginalString(),
@@ -480,16 +487,17 @@ public class MessageBundleProcessor {
                 }
                 String locale = entry.getKey();
                 ClassOutput localeAwareGizmoAdaptor = new GeneratedClassGizmoAdaptor(generatedClasses,
-                        new AppClassPredicate(applicationArchivesBuildItem, new Function<String, String>() {
-                            @Override
-                            public String apply(String className) {
-                                String localeSuffix = "_" + locale;
-                                if (className.endsWith(localeSuffix)) {
-                                    return className.replace(localeSuffix, "");
-                                }
-                                return className;
-                            }
-                        }));
+                        new AppClassPredicate(applicationArchivesBuildItem,
+                                new Function<String, String>() {
+                                    @Override
+                                    public String apply(String className) {
+                                        String localeSuffix = "_" + locale;
+                                        if (className.endsWith(localeSuffix)) {
+                                            return className.replace(localeSuffix, "");
+                                        }
+                                        return className;
+                                    }
+                                }));
                 generatedTypes.put(localizedFile.toString(),
                         generateImplementation(bundle.getDefaultBundleInterface(), bundleImpl, bundleInterface,
                                 localeAwareGizmoAdaptor,
@@ -522,10 +530,10 @@ public class MessageBundleProcessor {
 
         String baseName;
         if (bundleInterface.enclosingClass() != null) {
-            baseName = DotNames.simpleName(bundleInterface.enclosingClass()) + "_"
-                    + DotNames.simpleName(bundleInterface.name());
+            baseName = DotNames.simpleName(bundleInterface.enclosingClass()) + ValueResolverGenerator.NESTED_SEPARATOR
+                    + DotNames.simpleName(bundleInterface);
         } else {
-            baseName = DotNames.simpleName(bundleInterface.name());
+            baseName = DotNames.simpleName(bundleInterface);
         }
         if (locale != null) {
             baseName = baseName + "_" + locale;
@@ -903,29 +911,32 @@ public class MessageBundleProcessor {
     }
 
     private static class AppClassPredicate implements Predicate<String> {
-        private final ApplicationArchivesBuildItem applicationArchivesBuildItem;
+
+        private final ApplicationArchivesBuildItem applicationArchives;
         private final Function<String, String> additionalClassNameSanitizer;
 
-        public AppClassPredicate(ApplicationArchivesBuildItem applicationArchivesBuildItem) {
-            this(applicationArchivesBuildItem, Function.identity());
+        public AppClassPredicate(ApplicationArchivesBuildItem applicationArchives) {
+            this(applicationArchives, Function.identity());
         }
 
-        public AppClassPredicate(ApplicationArchivesBuildItem applicationArchivesBuildItem,
+        public AppClassPredicate(ApplicationArchivesBuildItem applicationArchives,
                 Function<String, String> additionalClassNameSanitizer) {
-            this.applicationArchivesBuildItem = applicationArchivesBuildItem;
+            this.applicationArchives = applicationArchives;
             this.additionalClassNameSanitizer = additionalClassNameSanitizer;
         }
 
         @Override
         public boolean test(String name) {
             int idx = name.lastIndexOf(SUFFIX);
+            // org/acme/Foo_Bundle -> org.acme.Foo
             String className = name.substring(0, idx).replace("/", ".");
             if (className.contains(ValueResolverGenerator.NESTED_SEPARATOR)) {
                 className = className.replace(ValueResolverGenerator.NESTED_SEPARATOR, "$");
             }
+            // E.g. to match the bundle class generated for a localized file; org.acme.Foo_en -> org.acme.Foo
             className = additionalClassNameSanitizer.apply(className);
-            return applicationArchivesBuildItem.getRootArchive().getIndex()
-                    .getClassByName(DotName.createSimple(className)) != null;
+            return applicationArchives.containingArchive(className) != null
+                    || GeneratedClassGizmoAdaptor.isApplicationClass(name);
         }
     }
 }

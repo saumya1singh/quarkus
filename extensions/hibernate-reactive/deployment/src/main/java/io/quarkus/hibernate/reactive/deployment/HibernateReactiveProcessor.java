@@ -26,13 +26,11 @@ import org.hibernate.loader.BatchFetchStyle;
 import io.quarkus.arc.deployment.AdditionalBeanBuildItem;
 import io.quarkus.datasource.deployment.spi.DefaultDataSourceDbKindBuildItem;
 import io.quarkus.datasource.runtime.DataSourcesBuildTimeConfig;
-import io.quarkus.deployment.Capability;
 import io.quarkus.deployment.Feature;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.ApplicationArchivesBuildItem;
-import io.quarkus.deployment.builditem.CapabilityBuildItem;
 import io.quarkus.deployment.builditem.CombinedIndexBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.HotDeploymentWatchedFileBuildItem;
@@ -43,6 +41,7 @@ import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.deployment.configuration.ConfigurationError;
 import io.quarkus.deployment.pkg.builditem.CurateOutcomeBuildItem;
 import io.quarkus.deployment.recording.RecorderContext;
+import io.quarkus.hibernate.orm.deployment.Dialects;
 import io.quarkus.hibernate.orm.deployment.HibernateConfigUtil;
 import io.quarkus.hibernate.orm.deployment.HibernateOrmConfig;
 import io.quarkus.hibernate.orm.deployment.HibernateOrmConfigPersistenceUnit;
@@ -64,15 +63,17 @@ import io.quarkus.runtime.LaunchMode;
 public final class HibernateReactiveProcessor {
 
     private static final String HIBERNATE_REACTIVE = "Hibernate Reactive";
+    static final String[] REFLECTIVE_CONSTRUCTORS_NEEDED = {
+            "org.hibernate.reactive.persister.entity.impl.ReactiveSingleTableEntityPersister",
+            "org.hibernate.reactive.persister.entity.impl.ReactiveJoinedSubclassEntityPersister",
+            "org.hibernate.reactive.persister.entity.impl.ReactiveUnionSubclassEntityPersister",
+            "org.hibernate.reactive.persister.collection.impl.ReactiveOneToManyPersister",
+            "org.hibernate.reactive.persister.collection.impl.ReactiveBasicCollectionPersister",
+    };
 
     @BuildStep
     FeatureBuildItem feature() {
         return new FeatureBuildItem(Feature.HIBERNATE_REACTIVE);
-    }
-
-    @BuildStep
-    CapabilityBuildItem capability() {
-        return new CapabilityBuildItem(Capability.HIBERNATE_REACTIVE);
     }
 
     @BuildStep
@@ -92,11 +93,7 @@ public final class HibernateReactiveProcessor {
 
     @BuildStep
     void reflections(BuildProducer<ReflectiveClassBuildItem> reflectiveClass) {
-        String[] classes = {
-                "org.hibernate.reactive.persister.entity.impl.ReactiveSingleTableEntityPersister",
-                "org.hibernate.reactive.persister.collection.impl.ReactiveOneToManyPersister"
-        };
-        reflectiveClass.produce(new ReflectiveClassBuildItem(false, false, classes));
+        reflectiveClass.produce(new ReflectiveClassBuildItem(false, false, REFLECTIVE_CONSTRUCTORS_NEEDED));
     }
 
     @BuildStep
@@ -144,7 +141,11 @@ public final class HibernateReactiveProcessor {
 
         // we only support the default pool for now
         Optional<String> dbKindOptional = DefaultDataSourceDbKindBuildItem.resolve(
-                dataSourcesBuildTimeConfig.defaultDataSource.dbKind, defaultDataSourceDbKindBuildItems, curateOutcomeBuildItem);
+                dataSourcesBuildTimeConfig.defaultDataSource.dbKind,
+                defaultDataSourceDbKindBuildItems,
+                dataSourcesBuildTimeConfig.defaultDataSource.devservices.enabled
+                        .orElse(dataSourcesBuildTimeConfig.namedDataSources.isEmpty()),
+                curateOutcomeBuildItem);
         if (dbKindOptional.isPresent()) {
             final String dbKind = dbKindOptional.get();
             ParsedPersistenceXmlDescriptor reactivePU = generateReactivePersistenceUnit(
@@ -206,7 +207,7 @@ public final class HibernateReactiveProcessor {
         //we have no persistence.xml so we will create a default one
         Optional<String> dialect = persistenceUnitConfig.dialect.dialect;
         if (!dialect.isPresent()) {
-            dialect = HibernateOrmProcessor.guessDialect(dbKind);
+            dialect = Dialects.guessDialect(dbKind);
         }
 
         String dialectClassName = dialect.get();

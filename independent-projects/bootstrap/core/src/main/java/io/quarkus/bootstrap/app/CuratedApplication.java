@@ -171,13 +171,17 @@ public class CuratedApplication implements Serializable, AutoCloseable {
     public synchronized QuarkusClassLoader getAugmentClassLoader() {
         if (augmentClassLoader == null) {
             //first run, we need to build all the class loaders
-            QuarkusClassLoader.Builder builder = QuarkusClassLoader.builder("Augmentation Class Loader",
+            QuarkusClassLoader.Builder builder = QuarkusClassLoader.builder(
+                    "Augmentation Class Loader: " + quarkusBootstrap.getMode(),
                     quarkusBootstrap.getBaseClassLoader(), !quarkusBootstrap.isIsolateDeployment());
             builder.addClassLoaderEventListeners(quarkusBootstrap.getClassLoaderEventListeners());
             //we want a class loader that can load the deployment artifacts and all their dependencies, but not
             //any of the runtime artifacts, or user classes
             //this will load any deployment artifacts from the parent CL if they are present
             for (AppDependency i : appModel.getFullDeploymentDeps()) {
+                if (configuredClassLoading.reloadableArtifacts.contains(i.getArtifact().getKey())) {
+                    continue;
+                }
                 processCpElement(i.getArtifact(), element -> addCpElement(builder, i.getArtifact(), element));
             }
 
@@ -200,10 +204,12 @@ public class CuratedApplication implements Serializable, AutoCloseable {
      */
     public synchronized QuarkusClassLoader getBaseRuntimeClassLoader() {
         if (baseRuntimeClassLoader == null) {
-            QuarkusClassLoader.Builder builder = QuarkusClassLoader.builder("Quarkus Base Runtime ClassLoader",
+            QuarkusClassLoader.Builder builder = QuarkusClassLoader.builder(
+                    "Quarkus Base Runtime ClassLoader: " + quarkusBootstrap.getMode(),
                     quarkusBootstrap.getBaseClassLoader(), false);
             builder.addClassLoaderEventListeners(quarkusBootstrap.getClassLoaderEventListeners());
-            if (quarkusBootstrap.getMode() == QuarkusBootstrap.Mode.TEST) {
+
+            if (quarkusBootstrap.getMode() == QuarkusBootstrap.Mode.TEST && quarkusBootstrap.isFlatClassPath()) {
                 //in test mode we have everything in the base class loader
                 //there is no need to restart so there is no need for an additional CL
 
@@ -211,6 +217,7 @@ public class CuratedApplication implements Serializable, AutoCloseable {
                     builder.addElement(ClassPathElement.fromPath(root));
                 }
             }
+
             //additional user class path elements first
             Set<Path> hotReloadPaths = new HashSet<>();
             for (AdditionalDependency i : quarkusBootstrap.getAdditionalApplicationArchives()) {
@@ -252,8 +259,9 @@ public class CuratedApplication implements Serializable, AutoCloseable {
 
     public QuarkusClassLoader createDeploymentClassLoader() {
         //first run, we need to build all the class loaders
-        QuarkusClassLoader.Builder builder = QuarkusClassLoader.builder("Deployment Class Loader",
-                getAugmentClassLoader(), false)
+        QuarkusClassLoader.Builder builder = QuarkusClassLoader
+                .builder("Deployment Class Loader: " + quarkusBootstrap.getMode(),
+                        getAugmentClassLoader(), false)
                 .addClassLoaderEventListeners(quarkusBootstrap.getClassLoaderEventListeners())
                 .setAggregateParentResources(true);
 
@@ -269,13 +277,23 @@ public class CuratedApplication implements Serializable, AutoCloseable {
                 builder.addElement(ClassPathElement.fromPath(root));
             }
         }
+        for (AppDependency dependency : appModel.getUserDependencies()) {
+            if (configuredClassLoading.reloadableArtifacts.contains(dependency.getArtifact().getKey())) {
+                processCpElement(dependency.getArtifact(), element -> addCpElement(builder, dependency.getArtifact(), element));
+            }
+        }
         return builder.build();
     }
 
-    public QuarkusClassLoader createRuntimeClassLoader(QuarkusClassLoader loader,
-            Map<String, byte[]> resources, Map<String, byte[]> transformedClasses) {
-        QuarkusClassLoader.Builder builder = QuarkusClassLoader.builder("Quarkus Runtime ClassLoader",
-                loader, false)
+    public QuarkusClassLoader createRuntimeClassLoader(Map<String, byte[]> resources, Map<String, byte[]> transformedClasses) {
+        return createRuntimeClassLoader(getBaseRuntimeClassLoader(), resources, transformedClasses);
+    }
+
+    public QuarkusClassLoader createRuntimeClassLoader(ClassLoader base, Map<String, byte[]> resources,
+            Map<String, byte[]> transformedClasses) {
+        QuarkusClassLoader.Builder builder = QuarkusClassLoader
+                .builder("Quarkus Runtime ClassLoader: " + quarkusBootstrap.getMode(),
+                        getBaseRuntimeClassLoader(), false)
                 .setAggregateParentResources(true);
         builder.setTransformedClasses(transformedClasses);
 

@@ -62,6 +62,7 @@ public class QuarkusPlugin implements Plugin<Project> {
     public static final String QUARKUS_DEV_TASK_NAME = "quarkusDev";
     public static final String QUARKUS_REMOTE_DEV_TASK_NAME = "quarkusRemoteDev";
     public static final String DEV_MODE_CONFIGURATION_NAME = "quarkusDev";
+    public static final String ANNOTATION_PROCESSOR_CONFIGURATION_NAME = "quarkusAnnotationProcessor";
 
     @Deprecated
     public static final String BUILD_NATIVE_TASK_NAME = "buildNative";
@@ -145,19 +146,22 @@ public class QuarkusPlugin implements Plugin<Project> {
 
                     // By default, gradle looks for annotation processors in the annotationProcessor configuration.
                     // This configure the compile task to look for annotation processors in the compileClasspath.
-                    compileJavaTask.getOptions().setAnnotationProcessorPath(
-                            configurations.getByName(JavaPlugin.COMPILE_CLASSPATH_CONFIGURATION_NAME));
+                    Configuration annotationProcessorConfig = configurations.create(ANNOTATION_PROCESSOR_CONFIGURATION_NAME)
+                            .extendsFrom(
+                                    configurations.getByName(JavaPlugin.COMPILE_CLASSPATH_CONFIGURATION_NAME),
+                                    configurations.getByName(JavaPlugin.ANNOTATION_PROCESSOR_CONFIGURATION_NAME));
+                    compileJavaTask.getOptions().setAnnotationProcessorPath(annotationProcessorConfig);
 
                     compileJavaTask.dependsOn(quarkusGenerateCode);
-                    quarkusGenerateCode.setSourceRegistrar(compileJavaTask::source);
 
                     JavaCompile compileTestJavaTask = (JavaCompile) tasks.getByName(JavaPlugin.COMPILE_TEST_JAVA_TASK_NAME);
                     compileTestJavaTask.dependsOn(quarkusGenerateCodeTests);
-                    quarkusGenerateCodeTests.setSourceRegistrar(compileTestJavaTask::source);
 
                     Task classesTask = tasks.getByName(JavaPlugin.CLASSES_TASK_NAME);
                     Task resourcesTask = tasks.getByName(JavaPlugin.PROCESS_RESOURCES_TASK_NAME);
-                    quarkusDev.dependsOn(classesTask, resourcesTask, quarkusGenerateCode);
+                    Task testClassesTask = tasks.getByName(JavaPlugin.TEST_CLASSES_TASK_NAME);
+                    Task testResourcesTask = tasks.getByName(JavaPlugin.PROCESS_TEST_RESOURCES_TASK_NAME);
+                    quarkusDev.dependsOn(classesTask, resourcesTask, testClassesTask, testResourcesTask, quarkusGenerateCode);
                     quarkusRemoteDev.dependsOn(classesTask, resourcesTask);
                     quarkusBuild.dependsOn(classesTask, resourcesTask, tasks.getByName(JavaPlugin.JAR_TASK_NAME));
 
@@ -198,27 +202,24 @@ public class QuarkusPlugin implements Plugin<Project> {
                     tasks.withType(Test.class).forEach(configureTestTask);
                     tasks.withType(Test.class).whenTaskAdded(configureTestTask::accept);
 
-                    sourceSets.create(QuarkusGenerateCode.QUARKUS_GENERATED_SOURCES).getOutput()
+                    SourceSet generatedSourceSet = sourceSets.create(QuarkusGenerateCode.QUARKUS_GENERATED_SOURCES);
+                    generatedSourceSet.getOutput()
                             .dir(QuarkusGenerateCode.QUARKUS_GENERATED_SOURCES);
-                    sourceSets.create(QuarkusGenerateCode.QUARKUS_TEST_GENERATED_SOURCES).getOutput()
+                    SourceSet generatedTestSourceSet = sourceSets.create(QuarkusGenerateCode.QUARKUS_TEST_GENERATED_SOURCES);
+                    generatedTestSourceSet.getOutput()
                             .dir(QuarkusGenerateCode.QUARKUS_TEST_GENERATED_SOURCES);
+
+                    // Register the quarkus-generated-code
+                    for (String provider : QuarkusGenerateCode.CODE_GENERATION_PROVIDER) {
+                        mainSourceSet.getJava().srcDir(new File(generatedSourceSet.getJava().getOutputDir(), provider));
+                        testSourceSet.getJava().srcDir(new File(generatedTestSourceSet.getJava().getOutputDir(), provider));
+                    }
+
                 });
 
         project.getPlugins().withId("org.jetbrains.kotlin.jvm", plugin -> {
             tasks.getByName("compileKotlin").dependsOn(quarkusGenerateCode);
             tasks.getByName("compileTestKotlin").dependsOn(quarkusGenerateCodeTests);
-
-            // Register the quarkus-generated-code
-            SourceSetContainer sourceSets = project.getConvention().getPlugin(JavaPluginConvention.class)
-                    .getSourceSets();
-            SourceSet mainSourceSet = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
-            SourceSet testSourceSet = sourceSets.getByName(SourceSet.TEST_SOURCE_SET_NAME);
-            SourceSet generatedSourceSet = sourceSets.getByName(QuarkusGenerateCode.QUARKUS_GENERATED_SOURCES);
-            SourceSet generatedTestSourceSet = sourceSets.getByName(QuarkusGenerateCode.QUARKUS_TEST_GENERATED_SOURCES);
-            for (String provider : QuarkusGenerateCode.CODE_GENERATION_PROVIDER) {
-                mainSourceSet.getJava().srcDir(new File(generatedSourceSet.getJava().getOutputDir(), provider));
-                testSourceSet.getJava().srcDir(new File(generatedTestSourceSet.getJava().getOutputDir(), provider));
-            }
         });
     }
 

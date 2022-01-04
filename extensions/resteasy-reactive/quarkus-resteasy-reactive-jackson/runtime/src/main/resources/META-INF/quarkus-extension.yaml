@@ -14,3 +14,10 @@ metadata:
   - "web"
   - "reactive"
   status: "experimental"
+  codestart:
+    name: "resteasy-reactive"
+    languages:
+      - "java"
+      - "kotlin"
+      - "scala"
+    artifact: "io.quarkus:quarkus-project-core-extension-codestarts"

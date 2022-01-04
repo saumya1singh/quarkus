@@ -4,8 +4,6 @@ import static io.quarkus.oidc.runtime.OidcIdentityProvider.NEW_AUTHENTICATION;
 import static io.quarkus.oidc.runtime.OidcIdentityProvider.REFRESH_TOKEN_GRANT_RESPONSE;
 
 import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.security.Permission;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +26,7 @@ import io.quarkus.oidc.OidcTenantConfig;
 import io.quarkus.oidc.OidcTenantConfig.Authentication;
 import io.quarkus.oidc.RefreshToken;
 import io.quarkus.oidc.SecurityEvent;
+import io.quarkus.oidc.common.runtime.OidcCommonUtils;
 import io.quarkus.oidc.common.runtime.OidcConstants;
 import io.quarkus.runtime.BlockingOperationControl;
 import io.quarkus.security.AuthenticationCompletionException;
@@ -40,10 +39,10 @@ import io.quarkus.vertx.http.runtime.security.ChallengeData;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.http.Cookie;
 import io.vertx.core.http.HttpHeaders;
+import io.vertx.core.http.impl.CookieImpl;
 import io.vertx.core.http.impl.ServerCookie;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.impl.CookieImpl;
 
 public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMechanism {
 
@@ -204,20 +203,22 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
 
         // client_id
         codeFlowParams.append(AMP).append(OidcConstants.CLIENT_ID).append(EQ)
-                .append(urlEncode(configContext.oidcConfig.clientId.get()));
+                .append(OidcCommonUtils.urlEncode(configContext.oidcConfig.clientId.get()));
 
         // scope
         List<String> scopes = new ArrayList<>();
         scopes.add("openid");
         configContext.oidcConfig.getAuthentication().scopes.ifPresent(scopes::addAll);
-        codeFlowParams.append(AMP).append(OidcConstants.TOKEN_SCOPE).append(EQ).append(urlEncode(String.join(" ", scopes)));
+        codeFlowParams.append(AMP).append(OidcConstants.TOKEN_SCOPE).append(EQ)
+                .append(OidcCommonUtils.urlEncode(String.join(" ", scopes)));
 
         // redirect_uri
         String redirectPath = getRedirectPath(configContext, context);
         String redirectUriParam = buildUri(context, isForceHttps(configContext), redirectPath);
         LOG.debugf("Authentication request redirect_uri parameter: %s", redirectUriParam);
 
-        codeFlowParams.append(AMP).append(OidcConstants.CODE_FLOW_REDIRECT_URI).append(EQ).append(urlEncode(redirectUriParam));
+        codeFlowParams.append(AMP).append(OidcConstants.CODE_FLOW_REDIRECT_URI).append(EQ)
+                .append(OidcCommonUtils.urlEncode(redirectUriParam));
 
         // state
         codeFlowParams.append(AMP).append(OidcConstants.CODE_FLOW_STATE).append(EQ)
@@ -226,7 +227,8 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
         // extra redirect parameters, see https://openid.net/specs/openid-connect-core-1_0.html#AuthRequests
         if (configContext.oidcConfig.authentication.getExtraParams() != null) {
             for (Map.Entry<String, String> entry : configContext.oidcConfig.authentication.getExtraParams().entrySet()) {
-                codeFlowParams.append(AMP).append(entry.getKey()).append(EQ).append(urlEncode(entry.getValue()));
+                codeFlowParams.append(AMP).append(entry.getKey()).append(EQ)
+                        .append(OidcCommonUtils.urlEncode(entry.getValue()));
             }
         }
 
@@ -234,14 +236,6 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
 
         return Uni.createFrom().item(new ChallengeData(HttpResponseStatus.FOUND.code(), HttpHeaders.LOCATION,
                 authorizationURL));
-    }
-
-    private static String urlEncode(String value) {
-        try {
-            return URLEncoder.encode(value, StandardCharsets.UTF_8.name());
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
     }
 
     private Uni<SecurityIdentity> performCodeFlow(IdentityProviderManager identityProviderManager,
@@ -394,7 +388,8 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
         String cookieValue = uuid;
 
         Authentication auth = configContext.oidcConfig.getAuthentication();
-        if (auth.isRestorePathAfterRedirect()) {
+        boolean restorePath = auth.isRestorePathAfterRedirect() || !auth.redirectPath.isPresent();
+        if (restorePath) {
             String requestQuery = context.request().query();
             String requestPath = !redirectPath.equals(context.request().path()) || requestQuery != null
                     ? context.request().path()
@@ -436,8 +431,8 @@ public class CodeAuthenticationMechanism extends AbstractOidcAuthenticationMecha
     static void setCookiePath(RoutingContext context, Authentication auth, ServerCookie cookie) {
         if (auth.cookiePathHeader.isPresent() && context.request().headers().contains(auth.cookiePathHeader.get())) {
             cookie.setPath(context.request().getHeader(auth.cookiePathHeader.get()));
-        } else if (auth.cookiePath.isPresent()) {
-            cookie.setPath(auth.getCookiePath().get());
+        } else {
+            cookie.setPath(auth.getCookiePath());
         }
     }
 

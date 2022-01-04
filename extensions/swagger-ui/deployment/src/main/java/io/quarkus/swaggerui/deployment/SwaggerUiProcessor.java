@@ -89,6 +89,13 @@ public class SwaggerUiProcessor {
                         "quarkus.swagger-ui.path was set to \"/\", this is not allowed as it blocks the application from serving anything else.");
             }
 
+            if (openapi.path.equalsIgnoreCase(swaggerUiConfig.path)) {
+                throw new ConfigurationError(
+                        "quarkus.smallrye-openapi.path and quarkus.swagger-ui.path was set to the same value, this is not allowed as the paths needs to be unique ["
+                                + openapi.path + "].");
+
+            }
+
             String openApiPath = nonApplicationRootPathBuildItem.resolvePath(openapi.path);
             String swaggerUiPath = nonApplicationRootPathBuildItem.resolvePath(swaggerUiConfig.path);
 
@@ -96,7 +103,8 @@ public class SwaggerUiProcessor {
                     SWAGGER_UI_WEBJAR_ARTIFACT_ID);
 
             if (launchMode.getLaunchMode().isDevOrTest()) {
-                Path tempPath = WebJarUtil.copyResourcesForDevOrTest(curateOutcomeBuildItem, launchMode, artifact,
+                Path tempPath = WebJarUtil.copyResourcesForDevOrTest(liveReloadBuildItem, curateOutcomeBuildItem, launchMode,
+                        artifact,
                         SWAGGER_UI_WEBJAR_PREFIX);
                 // Update index.html
                 WebJarUtil.updateFile(tempPath.resolve("index.html"),
@@ -155,8 +163,9 @@ public class SwaggerUiProcessor {
                     .handler(handler)
                     .requiresLegacyRedirect()
                     .build());
+
             routes.produce(nonApplicationRootPathBuildItem.routeBuilder()
-                    .route(swaggerUiConfig.path + "/*")
+                    .route(swaggerUiConfig.path + "*")
                     .handler(handler)
                     .requiresLegacyRedirect()
                     .build());

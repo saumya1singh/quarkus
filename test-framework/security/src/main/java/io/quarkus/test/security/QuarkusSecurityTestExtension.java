@@ -3,9 +3,12 @@ package io.quarkus.test.security;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.stream.Collectors;
 
+import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.spi.CDI;
 
+import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusPrincipal;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.test.junit.callback.QuarkusTestAfterEachCallback;
@@ -24,7 +27,7 @@ public class QuarkusSecurityTestExtension implements QuarkusTestBeforeEachCallba
     public void beforeEach(QuarkusTestMethodContext context) {
         try {
             //the usual ClassLoader hacks to get our copy of the TestSecurity annotation
-            ClassLoader cl = QuarkusSecurityTestExtension.class.getClassLoader();
+            ClassLoader cl = Thread.currentThread().getContextClassLoader();
             Class<?> original = cl.loadClass(context.getTestMethod().getDeclaringClass().getName());
             Method method = original.getDeclaredMethod(context.getTestMethod().getName(),
                     Arrays.stream(context.getTestMethod().getParameterTypes()).map(s -> {
@@ -54,14 +57,29 @@ public class QuarkusSecurityTestExtension implements QuarkusTestBeforeEachCallba
                     throw new RuntimeException("Cannot specify roles without a username in @TestSecurity");
                 }
             } else {
-                QuarkusSecurityIdentity user = QuarkusSecurityIdentity.builder()
+                QuarkusSecurityIdentity.Builder user = QuarkusSecurityIdentity.builder()
                         .setPrincipal(new QuarkusPrincipal(testSecurity.user()))
-                        .addRoles(new HashSet<>(Arrays.asList(testSecurity.roles()))).build();
-                CDI.current().select(TestIdentityAssociation.class).get().setTestIdentity(user);
+                        .addRoles(new HashSet<>(Arrays.asList(testSecurity.roles())));
+
+                if (testSecurity.attributes() != null) {
+                    user.addAttributes(Arrays.stream(testSecurity.attributes())
+                            .collect(Collectors.toMap(s -> s.key(), s -> s.value())));
+                }
+
+                SecurityIdentity userIdentity = augment(user.build());
+                CDI.current().select(TestIdentityAssociation.class).get().setTestIdentity(userIdentity);
             }
         } catch (Exception e) {
             throw new RuntimeException("Unable to setup @TestSecurity", e);
         }
 
+    }
+
+    private SecurityIdentity augment(SecurityIdentity identity) {
+        Instance<TestSecurityIdentityAugmentor> producer = CDI.current().select(TestSecurityIdentityAugmentor.class);
+        if (producer.isResolvable()) {
+            return producer.get().augment(identity);
+        }
+        return identity;
     }
 }

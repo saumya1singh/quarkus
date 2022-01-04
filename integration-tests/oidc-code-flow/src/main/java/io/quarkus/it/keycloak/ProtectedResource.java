@@ -1,5 +1,7 @@
 package io.quarkus.it.keycloak;
 
+import java.util.stream.Collectors;
+
 import javax.inject.Inject;
 import javax.ws.rs.GET;
 import javax.ws.rs.InternalServerErrorException;
@@ -14,6 +16,7 @@ import io.quarkus.oidc.AccessTokenCredential;
 import io.quarkus.oidc.IdToken;
 import io.quarkus.oidc.IdTokenCredential;
 import io.quarkus.oidc.OIDCException;
+import io.quarkus.oidc.OidcConfigurationMetadata;
 import io.quarkus.oidc.RefreshToken;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -25,6 +28,9 @@ public class ProtectedResource {
 
     @Inject
     SecurityIdentity identity;
+
+    @Inject
+    OidcConfigurationMetadata configMetadata;
 
     @Inject
     @IdToken
@@ -46,9 +52,28 @@ public class ProtectedResource {
     SecurityContext securityContext;
 
     @GET
-    @Path("sec")
-    public String hello() {
+    @Path("test-security")
+    public String testSecurity() {
         return securityContext.getUserPrincipal().getName();
+    }
+
+    @GET
+    @Path("test-security-oidc")
+    public String testSecurityJwt() {
+        return idToken.getName() + ":" + idToken.getGroups().iterator().next()
+                + ":" + idToken.getClaim("email");
+    }
+
+    @GET
+    @Path("configMetadataIssuer")
+    public String configMetadataIssuer() {
+        return configMetadata.getIssuer();
+    }
+
+    @GET
+    @Path("configMetadataScopes")
+    public String configMetadataScopes() {
+        return configMetadata.getSupportedScopes().stream().collect(Collectors.joining(","));
     }
 
     @GET

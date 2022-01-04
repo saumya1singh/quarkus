@@ -49,6 +49,18 @@ public class BuildToolHelper {
 
     }
 
+    public static Path getProjectDir(Path p) {
+        Path currentPath = p;
+        while (currentPath != null) {
+            if (BuildTool.MAVEN.exists(currentPath) || BuildTool.GRADLE.exists(currentPath)) {
+                return currentPath;
+            }
+            currentPath = currentPath.getParent();
+        }
+        log.warnv("Unable to find a project directory for {0}.", p.toString());
+        return null;
+    }
+
     public static BuildTool findBuildTool(Path project) {
         Path currentPath = project;
         while (currentPath != null) {
@@ -94,7 +106,7 @@ public class BuildToolHelper {
         if (isGradleProject(projectRoot)) {
             final QuarkusModel model = QuarkusGradleModelFactory.create(getBuildFile(projectRoot, BuildTool.GRADLE).toFile(),
                     mode, jvmArgs, tasks);
-            QuarkusModelHelper.exportModel(model);
+            QuarkusModelHelper.exportModel(model, "TEST".equalsIgnoreCase(mode));
             return model;
         }
         return null;
@@ -105,7 +117,7 @@ public class BuildToolHelper {
         if (isGradleProject(projectRoot)) {
             final QuarkusModel model = QuarkusGradleModelFactory
                     .createForTasks(getBuildFile(projectRoot, BuildTool.GRADLE).toFile(), DEVMODE_REQUIRED_TASKS);
-            QuarkusModelHelper.exportModel(model);
+            QuarkusModelHelper.exportModel(model, false);
             return model;
         }
         return null;

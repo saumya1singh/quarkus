@@ -119,7 +119,7 @@ public class QuarkusModelBuilder implements ParameterizedToolingModelBuilder<Mod
                 project.getVersion().toString());
 
         return new QuarkusModelImpl(
-                new WorkspaceImpl(appArtifactCoords, getWorkspace(project.getRootProject(), mode)),
+                new WorkspaceImpl(appArtifactCoords, getWorkspace(project.getRootProject(), mode, appArtifactCoords)),
                 new LinkedList<>(appDependencies.values()),
                 extensionDependencies,
                 deploymentDeps.stream().map(QuarkusModelBuilder::toEnforcedPlatformDependency)
@@ -194,7 +194,7 @@ public class QuarkusModelBuilder implements ParameterizedToolingModelBuilder<Mod
         return platformProps;
     }
 
-    public Set<WorkspaceModule> getWorkspace(Project project, LaunchMode mode) {
+    public Set<WorkspaceModule> getWorkspace(Project project, LaunchMode mode, ArtifactCoords mainModuleCoord) {
         Set<WorkspaceModule> modules = new HashSet<>();
         for (Project subproject : project.getAllprojects()) {
             final Convention convention = subproject.getConvention();
@@ -202,18 +202,30 @@ public class QuarkusModelBuilder implements ParameterizedToolingModelBuilder<Mod
             if (javaConvention == null || !javaConvention.getSourceSets().getNames().contains(SourceSet.MAIN_SOURCE_SET_NAME)) {
                 continue;
             }
-            modules.add(getWorkspaceModule(subproject, mode));
+            if (subproject.getName().equals(mainModuleCoord.getArtifactId())
+                    && subproject.getGroup().equals(mainModuleCoord.getGroupId())) {
+                modules.add(getWorkspaceModule(subproject, mode, true));
+            } else {
+                modules.add(getWorkspaceModule(subproject, mode, false));
+            }
+
         }
         return modules;
     }
 
-    private WorkspaceModule getWorkspaceModule(Project project, LaunchMode mode) {
+    private WorkspaceModule getWorkspaceModule(Project project, LaunchMode mode, boolean isMainModule) {
         ArtifactCoords appArtifactCoords = new ArtifactCoordsImpl(project.getGroup().toString(), project.getName(),
                 project.getVersion().toString());
         final SourceSet mainSourceSet = QuarkusGradleUtils.getSourceSet(project, SourceSet.MAIN_SOURCE_SET_NAME);
         final SourceSetImpl modelSourceSet = convert(mainSourceSet);
-        return new WorkspaceModuleImpl(appArtifactCoords, project.getProjectDir().getAbsoluteFile(),
+        WorkspaceModuleImpl workspaceModule = new WorkspaceModuleImpl(appArtifactCoords,
+                project.getProjectDir().getAbsoluteFile(),
                 project.getBuildDir().getAbsoluteFile(), getSourceSourceSet(mainSourceSet), modelSourceSet);
+        if (isMainModule && mode == LaunchMode.TEST) {
+            final SourceSet testSourceSet = QuarkusGradleUtils.getSourceSet(project, SourceSet.TEST_SOURCE_SET_NAME);
+            workspaceModule.getSourceSet().getSourceDirectories().addAll(testSourceSet.getOutput().getClassesDirs().getFiles());
+        }
+        return workspaceModule;
     }
 
     private List<org.gradle.api.artifacts.Dependency> getEnforcedPlatforms(Project project) {
@@ -337,15 +349,21 @@ public class QuarkusModelBuilder implements ParameterizedToolingModelBuilder<Mod
                 continue;
             }
             final DependencyImpl dep = initDependency(a);
-            if (LaunchMode.DEVELOPMENT.equals(mode) &&
+            if ((LaunchMode.DEVELOPMENT.equals(mode) || LaunchMode.TEST.equals(mode)) &&
                     a.getId().getComponentIdentifier() instanceof ProjectComponentIdentifier) {
                 IncludedBuild includedBuild = includedBuild(project, a.getName());
-                if (includedBuild != null) {
-                    addSubstitutedProject(dep, includedBuild.getProjectDir());
+                if ("test-fixtures".equals(a.getClassifier()) || "test".equals(a.getClassifier())) {
+                    //TODO: test-fixtures are broken under the new ClassLoading model
+                    dep.addPath(a.getFile());
                 } else {
-                    Project projectDep = project.getRootProject()
-                            .findProject(((ProjectComponentIdentifier) a.getId().getComponentIdentifier()).getProjectPath());
-                    addDevModePaths(dep, a, projectDep);
+                    if (includedBuild != null) {
+                        addSubstitutedProject(dep, includedBuild.getProjectDir());
+                    } else {
+                        Project projectDep = project.getRootProject()
+                                .findProject(
+                                        ((ProjectComponentIdentifier) a.getId().getComponentIdentifier()).getProjectPath());
+                        addDevModePaths(dep, a, projectDep);
+                    }
                 }
             } else {
                 dep.addPath(a.getFile());
@@ -397,10 +415,16 @@ public class QuarkusModelBuilder implements ParameterizedToolingModelBuilder<Mod
             dep.addPath(a.getFile());
             return;
         }
-
-        final File classesDir = new File(QuarkusGradleUtils.getClassesDir(mainSourceSet, project.getBuildDir(), false));
-        if (classesDir.exists()) {
-            dep.addPath(classesDir);
+        final String classes = QuarkusGradleUtils.getClassesDir(mainSourceSet, project.getBuildDir(), false);
+        if (classes == null) {
+            dep.addPath(a.getFile());
+        } else {
+            final File classesDir = new File(classes);
+            if (classesDir.exists()) {
+                dep.addPath(classesDir);
+            } else {
+                dep.addPath(a.getFile());
+            }
         }
         for (File resourcesDir : mainSourceSet.getResources().getSourceDirectories()) {
             if (resourcesDir.exists()) {
@@ -446,13 +470,18 @@ public class QuarkusModelBuilder implements ParameterizedToolingModelBuilder<Mod
     }
 
     private SourceSetImpl convert(SourceSet sourceSet) {
+        Set<File> existingSrcDirs = new HashSet<>();
+        for (File srcDir : sourceSet.getOutput().getClassesDirs().getFiles()) {
+            if (srcDir.exists()) {
+                existingSrcDirs.add(srcDir);
+            }
+        }
         if (sourceSet.getOutput().getResourcesDir().exists()) {
             return new SourceSetImpl(
-                    sourceSet.getOutput().getClassesDirs().getFiles(),
+                    existingSrcDirs,
                     sourceSet.getOutput().getResourcesDir());
         }
-        return new SourceSetImpl(
-                sourceSet.getOutput().getClassesDirs().getFiles());
+        return new SourceSetImpl(existingSrcDirs);
     }
 
     private io.quarkus.bootstrap.resolver.model.SourceSet getSourceSourceSet(SourceSet sourceSet) {

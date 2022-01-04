@@ -1,10 +1,11 @@
 package io.quarkus.devtools.commands.handlers;
 
-import static io.quarkus.devtools.commands.CreateProject.CODESTARTS;
+import static io.quarkus.devtools.codestarts.quarkus.QuarkusCodestartData.QuarkusDataKey.APP_CONFIG;
+import static io.quarkus.devtools.commands.CreateProject.EXAMPLE;
+import static io.quarkus.devtools.commands.CreateProject.EXTRA_CODESTARTS;
 import static io.quarkus.devtools.commands.CreateProject.NO_BUILDTOOL_WRAPPER;
+import static io.quarkus.devtools.commands.CreateProject.NO_CODE;
 import static io.quarkus.devtools.commands.CreateProject.NO_DOCKERFILES;
-import static io.quarkus.devtools.commands.CreateProject.NO_EXAMPLES;
-import static io.quarkus.devtools.commands.CreateProject.OVERRIDE_EXAMPLES;
 import static io.quarkus.devtools.commands.handlers.QuarkusCommandHandlers.computeCoordsFromQuery;
 import static io.quarkus.devtools.project.codegen.ProjectGenerator.BOM_ARTIFACT_ID;
 import static io.quarkus.devtools.project.codegen.ProjectGenerator.BOM_GROUP_ID;
@@ -14,7 +15,6 @@ import static io.quarkus.devtools.project.codegen.ProjectGenerator.PACKAGE_NAME;
 import static io.quarkus.devtools.project.codegen.ProjectGenerator.PROJECT_GROUP_ID;
 import static io.quarkus.devtools.project.codegen.ProjectGenerator.QUARKUS_VERSION;
 
-import io.quarkus.bootstrap.model.AppArtifactCoords;
 import io.quarkus.devtools.codestarts.CodestartProjectDefinition;
 import io.quarkus.devtools.codestarts.CodestartType;
 import io.quarkus.devtools.codestarts.quarkus.QuarkusCodestartCatalog;
@@ -31,7 +31,6 @@ import io.quarkus.registry.catalog.ExtensionCatalog;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -79,7 +78,7 @@ public class CreateProjectCommandHandler implements QuarkusCommandHandler {
             }
         }
 
-        final List<AppArtifactCoords> extensionsToAdd = computeCoordsFromQuery(invocation, extensionsQuery);
+        final List<ArtifactCoords> extensionsToAdd = computeCoordsFromQuery(invocation, extensionsQuery);
         if (extensionsToAdd == null) {
             throw new QuarkusCommandException("Failed to create project because of invalid extensions");
         }
@@ -94,13 +93,14 @@ public class CreateProjectCommandHandler implements QuarkusCommandHandler {
             final QuarkusCodestartProjectInput input = QuarkusCodestartProjectInput.builder()
                     .addExtensions(extensionsToAdd)
                     .buildTool(invocation.getQuarkusProject().getBuildTool())
-                    .addOverrideExamples(invocation.getValue(OVERRIDE_EXAMPLES, new HashSet<>()))
-                    .addCodestarts(invocation.getValue(CODESTARTS, new HashSet<>()))
-                    .noExamples(invocation.getValue(NO_EXAMPLES, false))
+                    .example(invocation.getValue(EXAMPLE))
+                    .noCode(invocation.getValue(NO_CODE, false))
+                    .addCodestarts(invocation.getValue(EXTRA_CODESTARTS, Collections.emptySet()))
                     .noBuildToolWrapper(invocation.getValue(NO_BUILDTOOL_WRAPPER, false))
                     .noDockerfiles(invocation.getValue(NO_DOCKERFILES, false))
                     .addData(platformData)
                     .addData(LegacySupport.convertFromLegacy(invocation.getValues()))
+                    .putData(APP_CONFIG.key(), invocation.getValue(APP_CONFIG.key(), Collections.emptyMap()))
                     .messageWriter(invocation.log())
                     .build();
             invocation.log().info("-----------");
@@ -112,7 +112,7 @@ public class CreateProjectCommandHandler implements QuarkusCommandHandler {
 
             final QuarkusCodestartCatalog catalog = QuarkusCodestartCatalog
                     .fromExtensionsCatalog(invocation.getQuarkusProject().getExtensionsCatalog(),
-                            invocation.getQuarkusProject().getCodestartsResourceLoader());
+                            invocation.getQuarkusProject().getCodestartResourceLoaders());
             final CodestartProjectDefinition projectDefinition = catalog.createProject(input);
             projectDefinition.generate(invocation.getQuarkusProject().getProjectDirPath());
             invocation.log()

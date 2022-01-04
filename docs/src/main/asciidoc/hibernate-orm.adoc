@@ -1,7 +1,7 @@
 ////
 This guide is maintained in the main Quarkus repository
 and pull requests should be submitted there:
-https://github.com/quarkusio/quarkus/tree/master/docs/src/main/asciidoc
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
 ////
 = Quarkus - Using Hibernate ORM and JPA
 
@@ -35,6 +35,7 @@ Add the following dependencies to your project:
   - `quarkus-jdbc-mariadb` for link:https://mariadb.com/[MariaDB]
   - `quarkus-jdbc-mssql` for link:https://www.microsoft.com/en-gb/sql-server/[Microsoft SQL Server]
   - `quarkus-jdbc-mysql` for link:https://www.mysql.com/[MySQL]
+  - `quarkus-jdbc-oracle` for link:https://www.oracle.com/database/[Oracle Database]
   - `quarkus-jdbc-postgresql` for link:https://www.postgresql.org/[PostgreSQL]
 
 
@@ -414,6 +415,7 @@ or jars, you can make sure that your jar is treated like a Quarkus application l
 
 This will allow Quarkus to index and enhance your entities as if they were inside the current project.
 
+[[dev-mode]]
 == Hibernate ORM in development mode
 
 Quarkus development mode is really useful for applications that mix front end or services and database access.

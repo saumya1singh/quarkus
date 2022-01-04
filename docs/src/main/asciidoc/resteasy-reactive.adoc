@@ -1,7 +1,7 @@
 ////
 This guide is maintained in the main Quarkus repository
 and pull requests should be submitted there:
-https://github.com/quarkusio/quarkus/tree/master/docs/src/main/asciidoc
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
 ////
 = Quarkus - Writing REST Services with RESTEasy Reactive
 
@@ -472,6 +472,26 @@ response (see <<negotiation>> for more advanced information).
 You can return any of the pre-defined types that you can read from the <<resource-types,HTTP response>>,
 and any other type will be mapped <<json,from that type to JSON>>.
 
+In addition, the following return types are also supported:
+
+.Table Additional response body parameter type
+|===
+|Type|Usage
+
+|link:{jdkapi}/java/nio/file/Path.html[`Path`]
+|The contents of the file specified by the given path
+
+|`PathPart`
+|The partial contents of the file specified by the given path
+
+|`FilePart`
+|The partial contents of a file
+
+|link:{vertxapi}io/vertx/core/file/AsyncFile.html[`AsyncFile`]
+|Vert.x AsyncFile, which can be in full, or partial
+
+|===
+
 Alternately, you can also return a <<reactive,reactive type>> such as link:{mutinyapi}/io/smallrye/mutiny/Uni.html[`Uni`], 
 link:{mutinyapi}/io/smallrye/mutiny/Multi.html[`Multi`] or 
 link:{jdkapi}/java/util/concurrent/CompletionStage.html[`CompletionStage`]
@@ -680,6 +700,12 @@ method takes parameters of the following type:
 
 |link:{jaxrsapi}/javax/ws/rs/sse/Sse.html[`Sse`]
 |Advanced: Complex SSE use-cases
+
+|link:{vertxapi}/io/vertx/core/http/HttpServerRequest.html[`HttpServerRequest`]
+|Advanced: Vert.x HTTP Request
+
+|link:{vertxapi}/io/vertx/core/http/HttpServerResponse.html[`HttpServerResponse`]
+|Advanced: Vert.x HTTP Response
 
 |===
 
@@ -1149,6 +1175,19 @@ class Filters {
     }
 }
 ----
+
+[IMPORTANT]
+====
+Request filters are usually executed on the same thread that the method that handles the request will be executed.
+That means that if the method servicing the request is annotated with `@Blocking`, then the filters will also be run
+on the worker thread.
+If the method is annotated with `@NonBlocking` (or is not annotated at all), then the filters will also be run
+on the same event-loop thread.
+
+If however a filter needs to be run on the event-loop despite the fact that the method servicing the request will be
+run on a worker thread, then `@ServerRequestFilter(nonBlocking=true)` can be used.
+Note however, that these filters need to be run before **any** filter that does not use that setting and would run on a worker thread.
+====
 
 Similarly, response filters can be declared with the `@ServerResponseFilter` annotation:
 
@@ -1812,3 +1851,12 @@ public class ResourceForApp1Only {
 ----
 
 Please note that if a JAX-RS Application has been detected and the method `getClasses()` and/or `getSingletons()` has/have been overridden, Quarkus will ignore the build time conditions and consider only what has been defined in the JAX-RS Application.
+
+
+== RESTEasy Reactive client
+In addition to the Server side, RESTEasy Reactive comes with a new MicroProfile Rest Client implementation that is non-blocking at its core.
+
+Please note that the `quarkus-rest-client` extension may not work properly with RESTEasy Reactive.
+
+See link:rest-client-reactive.adoc[REST Client Reactive Guide] for more information about the reactive client.
+

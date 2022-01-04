@@ -135,6 +135,8 @@ public class SmallRyeGraphQLProcessor {
         additionalBeanProducer.produce(AdditionalBeanBuildItem.builder()
                 .addBeanClass(GraphQLConfig.class)
                 .addBeanClass(GraphQLProducer.class)
+                // TODO - MP4 - Require GraphQL Update
+                //.addBeanClass(SmallRyeContextAccessorProxy.class)
                 .setUnremovable().build());
     }
 
@@ -415,11 +417,11 @@ public class SmallRyeGraphQLProcessor {
     private boolean shouldActivateService(Capabilities capabilities,
             Optional<Boolean> serviceEnabled,
             String linkedExtensionName,
-            Capability linkedCapability,
+            String linkedCapability,
             String configKey) {
 
         return shouldActivateService(capabilities, serviceEnabled, capabilities.isPresent(linkedCapability),
-                linkedExtensionName, linkedCapability.getName(), configKey);
+                linkedExtensionName, linkedCapability, configKey);
     }
 
     private boolean shouldActivateService(Capabilities capabilities,
@@ -471,7 +473,8 @@ public class SmallRyeGraphQLProcessor {
             AppArtifact artifact = WebJarUtil.getAppArtifact(curateOutcomeBuildItem, GRAPHQL_UI_WEBJAR_GROUP_ID,
                     GRAPHQL_UI_WEBJAR_ARTIFACT_ID);
             if (launchMode.getLaunchMode().isDevOrTest()) {
-                Path tempPath = WebJarUtil.copyResourcesForDevOrTest(curateOutcomeBuildItem, launchMode, artifact,
+                Path tempPath = WebJarUtil.copyResourcesForDevOrTest(liveReloadBuildItem, curateOutcomeBuildItem, launchMode,
+                        artifact,
                         GRAPHQL_UI_WEBJAR_PREFIX);
                 WebJarUtil.updateUrl(tempPath.resolve(FILE_TO_UPDATE), graphQLPath, LINE_TO_UPDATE, LINE_FORMAT);
                 WebJarUtil.updateUrl(tempPath.resolve(FILE_TO_UPDATE), graphQLUiPath,
@@ -531,16 +534,18 @@ public class SmallRyeGraphQLProcessor {
                     smallRyeGraphQLBuildItem.getGraphqlUiPath(), runtimeConfig);
             routeProducer.produce(nonApplicationRootPathBuildItem.routeBuilder()
                     .route(graphQLConfig.ui.rootPath)
+                    .displayOnNotFoundPage("GraphQL UI")
                     .routeConfigKey("quarkus.smallrye-graphql.ui.root-path")
-                    .displayOnNotFoundPage("MicroProfile GraphQL UI")
                     .handler(handler)
                     .requiresLegacyRedirect()
                     .build());
+
             routeProducer.produce(nonApplicationRootPathBuildItem.routeBuilder()
-                    .route(graphQLConfig.ui.rootPath + "/*")
+                    .route(graphQLConfig.ui.rootPath + "*")
                     .handler(handler)
                     .requiresLegacyRedirect()
                     .build());
+
         }
     }
 

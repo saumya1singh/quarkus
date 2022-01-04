@@ -1,7 +1,7 @@
 ////
 This guide is maintained in the main Quarkus repository
 and pull requests should be submitted there:
-https://github.com/quarkusio/quarkus/tree/master/docs/src/main/asciidoc
+https://github.com/quarkusio/quarkus/tree/main/docs/src/main/asciidoc
 ////
 = Quarkus - Using OpenID Connect to Protect Service Applications using Bearer Token Authorization
 
@@ -24,7 +24,7 @@ To complete this guide, you need:
 
 * less than 15 minutes
 * an IDE
-* JDK 1.8+ installed with `JAVA_HOME` configured appropriately
+* JDK 11+ installed with `JAVA_HOME` configured appropriately
 * Apache Maven {maven-version}
 * https://stedolan.github.io/jq/[jq tool]
 * Docker
@@ -168,7 +168,7 @@ If you need to access `JsonWebToken` claims, you may simply inject the token its
 package org.acme.security.openid.connect;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
-
+import javax.inject.Inject;
 import javax.annotation.security.RolesAllowed;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
@@ -336,6 +336,11 @@ Set `quarkus.oidc.user-info-required=true` if a UserInfo JSON object from the OI
 A request will be sent to the OpenId Provider UserInfo endpoint and  an `io.quarkus.oidc.UserInfo` (a simple `javax.json.JsonObject` wrapper) object will be created.
 `io.quarkus.oidc.UserInfo` can be either injected or accessed as a SecurityIdentity `userinfo` attribute.
 
+[[config-metadata]]
+== Configuration Metadata
+
+The discovered link:https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata[OpenId Connect Configuration Metadata] is represented by `io.quarkus.oidc.OidcConfigurationMetadata` and can be either injected or accessed as a `SecurityIdentity` `configuration-metadata` attribute.
+
 == Token Claims And SecurityIdentity Roles
 
 SecurityIdentity roles can be mapped from the verified JWT access tokens as follows:
@@ -400,9 +405,288 @@ For example, here is how you can use `keycloak.js` to authenticate the users and
 </html>
 ----
 
+== Provider Endpoint configuration
+
+OIDC `service` application needs to know OpenId Connect provider's token, `JsonWebKey` (JWK) set and possibly `UserInfo` and introspection endpoint addresses.
+
+By default they are discovered by adding a `/.well-known/openid-configuration` path to the configured `quarkus.oidc.auth-server-url`.
+
+Alternatively, if the discovery endpoint is not available or you would like to save on the discovery endpoint roundtrip, you can disable the discovery and configure them with relative path values, for example:
+
+[source, properties]
+----
+quarkus.oidc.auth-server-url=http://localhost:8180/auth/realms/quarkus
+quarkus.oidc.discovery-enabled=false
+# Token endpoint: http://localhost:8180/auth/realms/quarkus/protocol/openid-connect/tokens
+quarkus.oidc.token-path=/protocol/openid-connect/tokens
+# JWK set endpoint: http://localhost:8180/auth/realms/quarkus/protocol/openid-connect/certs
+quarkus.oidc.jwks-path=/protocol/openid-connect/certs
+# UserInfo endoint: http://localhost:8180/auth/realms/quarkus/protocol/openid-connect/userinfo
+quarkus.oidc.user-info-path=/protocol/openid-connect/userinfo
+# Token Introspection endoint: http://localhost:8180/auth/realms/quarkus/protocol/openid-connect/tokens/introspect
+quarkus.oidc.introspection-path=/protocol/openid-connect/tokens/introspect
+----
+
+[[jwt-claim-verification]]
+== JSON Web Token Claim Verification
+
+Once the bearer JWT token's signature has been verified and its `expires at` (`exp`) claim has been checked, the `iss` (`issuer`) claim value is verified next.
+
+By default, the `iss` claim value is compared to the `issuer` property which may have been discovered in the well-known provider configuration.
+But if `quarkus.oidc.token.issuer` property is set then the `iss` claim value is compared to it instead.
+
+In some cases, this `iss` claim verification may not work. For example, if the discovered `issuer` property contains an internal HTTP/IP address while the token `iss` claim value contains an external HTTP/IP address. Or when a discovered `issuer` property contains the template tenant variable but the token `iss` claim value has the complete tenant-specific issuer value.
+
+In such cases you may want to consider skipping the issuer verification by setting `quarkus.oidc.token.issuer=any`. Please note that it is not recommended and should be avoided unless no other options are available:
+
+- If you work with Keycloak and observe the issuer verification errors due to the different host addresses then configure Keycloak with a `KEYCLOAK_FRONTEND_URL` property to ensure the same host address is used.
+- If the `iss` property is tenant specific in a multi-tenant deployment then you can use the `SecurityIdentity` `tenant-id` attribute to check the issuer is correct in the endpoint itself or the custom JAX-RS filter, for example:
+
+[source, java]
+----
+import javax.inject.Inject;
+import javax.ws.rs.container.ContainerRequestContext;
+import javax.ws.rs.container.ContainerRequestFilter;
+import javax.ws.rs.ext.Provider;
+
+import org.eclipse.microprofile.jwt.JsonWebToken;
+import io.quarkus.oidc.OidcConfigurationMetadata;
+import io.quarkus.security.identity.SecurityIdentity;
+
+@Provider
+public class IssuerValidator implements ContainerRequestFilter {
+    @Inject
+    OidcConfigurationMetadata configMetadata;
+
+    @Inject JsonWebToken jwt;
+    @Inject SecurityIdentity identity;
+
+    public void filter(ContainerRequestContext requestContext) {
+        String issuer = configMetadata.getIssuer().replace("{tenant-id}", identity.getAttribute("tenant-id"));
+        if (!issuer.equals(jwt.getIssuer())) {
+            requestContext.abortWith(Response.status(401).build());
+        }
+    }
+}
+----
+
+Note it is also recommended to use `quarkus.oidc.token.audience` property to verify the token `aud` (`audience`) claim value.
+
 == Token Propagation
 
 Please see link:security-openid-connect-client#token-propagation[Token Propagation] section about the Bearer access token propagation to the downstream services.
+
+[[integration-testing]]
+== Testing
+
+Start by adding the following dependencies to your test project:
+
+[source,xml]
+----
+<dependency>
+    <groupId>net.sourceforge.htmlunit</groupId>
+    <artifactId>htmlunit</artifactId>
+    <exclusions>
+        <exclusion>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>*</artifactId>
+       </exclusion>
+
+    </exclusions>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-junit5</artifactId>
+    <scope>test</scope>
+</dependency>
+----
+
+[[integration-testing-wiremock]]
+=== Wiremock
+
+Add the following dependencies to your test project:
+
+[source,xml]
+----
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-test-oidc-server</artifactId>
+    <scope>test</scope>
+</dependency>
+----
+
+Prepare the REST test endpoint, set `application.properties`, for example:
+
+[source, properties]
+----
+# keycloak.url is set by OidcWiremockTestResource
+quarkus.oidc.auth-server-url=${keycloak.url}/realms/quarkus/
+quarkus.oidc.client-id=quarkus-service-app
+quarkus.oidc.application-type=service
+# required to sign the tokens
+smallrye.jwt.sign.key.location=privateKey.jwk
+----
+
+and finally write the test code, for example:
+
+[source, java]
+----
+import static org.hamcrest.Matchers.equalTo;
+
+import java.util.Arrays;
+import java.util.HashSet;
+
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Test;
+
+import io.quarkus.test.common.QuarkusTestResource;
+import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.oidc.server.OidcWiremockTestResource;
+import io.restassured.RestAssured;
+import io.smallrye.jwt.build.Jwt;
+
+@QuarkusTest
+@QuarkusTestResource(OidcWiremockTestResource.class)
+public class BearerTokenAuthorizationTest {
+
+    @Test
+    public void testBearerToken() {
+        RestAssured.given().auth().oauth2(getAccessToken("alice", new HashSet<>(Arrays.asList("user"))))
+            .when().get("/api/users/preferredUserName")
+            .then()
+            .statusCode(200)
+            // the test endpoint returns the name extracted from the injected SecurityIdentity Principal
+            .body("userName", equalTo("alice"));
+    }
+
+    private String getAccessToken(String userName, Set<String> groups) {
+        return Jwt.preferredUserName(userName)
+                .groups(groups)
+                .issuer("https://server.example.com")
+                .audience("https://service.example.com")
+                .sign();
+    }
+}
+----
+
+Testing your `quarkus-oidc` `service` application with `OidcWiremockTestResource` provides the best coverage as even the communication channel is tested against the Wiremock HTTP stubs.
+`OidcWiremockTestResource` will be enhanced going forward to support more complex Bearer token test scenarios.
+
+[[integration-testing-keycloak]]
+=== Keycloak
+
+If you work with Keycloak then you can test against a live Keycloak instance by adding the following dependency:
+
+[source,xml]
+----
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-test-keycloak-server</artifactId>
+    <scope>test</scope>
+</dependency>
+----
+
+and configure `maven.surefire.plugin` as follows:
+
+[source,xml]
+----
+<plugin>
+    <artifactId>maven-surefire-plugin</artifactId>
+    <configuration>
+        <systemPropertyVariables>
+            <!-- or, alternativey, configure 'keycloak.version' -->
+            <keycloak.docker.image>${keycloak.docker.image}</keycloak.docker.image>
+            <!--
+              Disable HTTPS if required:
+              <keycloak.use.https>false</keycloak.use.https>
+            -->
+        </systemPropertyVariables>
+    </configuration>
+</plugin>
+----
+
+(and similarly `maven.failsafe.plugin` when testing in native image).
+
+Prepare the REST test endpoint, set `application.properties`, for example:
+
+[source, properties]
+----
+# keycloak.url is set by KeycloakTestResourceLifecycleManager
+quarkus.oidc.auth-server-url=${keycloak.url}/realms/quarkus/
+quarkus.oidc.client-id=quarkus-service-app
+quarkus.oidc.credentials=secret
+quarkus.oidc.application-type=service
+----
+
+and finally write the test code, for example:
+
+[source, java]
+----
+import static io.quarkus.test.keycloak.server.KeycloakTestResourceLifecycleManager.getAccessToken;
+import static org.hamcrest.Matchers.equalTo;
+
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Test;
+
+import io.quarkus.test.common.QuarkusTestResource;
+import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.keycloak.server.KeycloakTestResourceLifecycleManager;
+import io.restassured.RestAssured;
+
+@QuarkusTest
+@QuarkusTestResource(KeycloakTestResourceLifecycleManager.class)
+public class BearerTokenAuthorizationTest {
+
+    @Test
+    public void testBearerToken() {
+        RestAssured.given().auth().oauth2(getAccessToken("alice"))))
+            .when().get("/api/users/preferredUserName")
+            .then()
+            .statusCode(200)
+            // the test endpoint returns the name extracted from the injected SecurityIdentity Principal
+            .body("userName", equalTo("alice"));
+    }
+
+}
+----
+
+`KeycloakTestResourceLifecycleManager` registers `alice` and `admin` users. The user `alice` has the `user` role only by default - it can be customized with a `keycloak.token.user-roles` system property. The user `admin` has the `user` and `admin` roles by default - it can be customized with a `keycloak.token.admin-roles` system property.
+
+By default, `KeycloakTestResourceLifecycleManager` uses HTTPS to initialize a Keycloak instance which can be disabled with `keycloak.use.https=false`.
+Default realm name is `quarkus` and client id - `quarkus-service-app` - set `keycloak.realm` and `keycloak.service.client` system properties to customize the values if needed.
+
+[[integration-testing-public-key]]
+=== Local Public Key
+
+You can also use a local inlined public key for testing your `quarkus-oidc` `service` applications:
+
+[source,properties]
+----
+quarkus.oidc.client-id=test
+quarkus.oidc.public-key=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlivFI8qB4D0y2jy0CfEqFyy46R0o7S8TKpsx5xbHKoU1VWg6QkQm+ntyIv1p4kE1sPEQO73+HY8+Bzs75XwRTYL1BmR1w8J5hmjVWjc6R2BTBGAYRPFRhor3kpM6ni2SPmNNhurEAHw7TaqszP5eUF/F9+KEBWkwVta+PZ37bwqSE4sCb1soZFrVz/UT/LF4tYpuVYt3YbqToZ3pZOZ9AX2o1GCG3xwOjkc4x0W7ezbQZdC9iftPxVHR8irOijJRRjcPDtA6vPKpzLl6CyYnsIYPd99ltwxTHjr3npfv/3Lw50bAkbT4HeLFxTx4flEoZLKO/g0bAoV2uqBhkA9xnQIDAQAB
+
+smallrye.jwt.sign.key-location=/privateKey.pem
+----
+
+copy `privateKey.pem` from the `integration-tests/oidc-tenancy` in the `main` Quarkus repository and use a test code similar to the one in the `Wiremock` section above to generate JWT tokens. You can use your own test keys if preferred.
+
+This approach provides a more limited coverage compared to the Wiremock approach - for example, the remote communication code is not covered.
+
+[[integration-testing-security-annotation]]
+=== TestSecurity annotation
+
+Please see link:security-jwt#integration-testing-security-annotation[Use TestingSecurity with injected JsonWebToken] section for more information about using `@TestSecurity` for testing the `service` application endpoint code which depends on the injected `JsonWebToken`.
+
+The only difference is that the following dependency should be used when testing the `service` applications:
+[source,xml]
+----
+<dependency>
+    <groupId>io.quarkus</groupId>
+    <artifactId>quarkus-test-security-oidc</artifactId>
+    <scope>test</scope>
+</dependency>
+----
 
 == References
 

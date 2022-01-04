@@ -42,9 +42,26 @@
       {/if}
       </span>
     </span>   
-    {/}  
+    {/}
+    <span class="navbar-right">
+       <span class="dropdown" style="display: none">
+          <button class="btn btn-success dropdown-toggle" type="button" id="quarkus-test-result-button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              <span id="quarkus-test-result-button-caption">
+                  All Tests Passing
+              </span>
+              <div class="spinner-border text-info spinner-border-sm" role="status" id="quarkus-test-result-button-loading">
+                  <span class="sr-only">Loading...</span>
+              </div>
+          </button>
+          <div class="dropdown-menu" aria-labelledby="quarkus-test-result-button">
+            <a class="dropdown-item" href="{devRootAppend}/io.quarkus.quarkus-vertx-http/test">Results</a>
+            <a class="dropdown-item" id="quarkus-test-result-button-pause" href="#">Pause Tests</a>
+            <a class="dropdown-item" id="quarkus-test-result-button-run-all" href="#">Re-run All Tests</a>
+          </div>
+        </span>
     <span class="navbar-text">
       {#if applicationName and applicationVersion}{applicationName} {applicationVersion} (powered by Quarkus {quarkusVersion}){/if}
+    </span>
     </span>
   </nav>
 
@@ -76,8 +93,9 @@
   <script src="{devRootAppend}/resources/js/jquery.min.js"></script>
   <script src="{devRootAppend}/resources/js/bootstrap.bundle.min.js"></script>
   <script src="{devRootAppend}/resources/js/logstream.js"></script>
-  {|
+  <script src="{devRootAppend}/resources/js/tests.js"></script>
   <script>
+  {|
     if (jQuery(".alert").length) {
      // dismiss alert
      jQuery(function() {
@@ -87,6 +105,91 @@
      });
     }
   |}
+    var sourceMap = \{\};
+  {#for sourcePackageEntry in ideInfo:sourcePackages}
+    var {sourcePackageEntry.key}Packages = [];
+    {#for rootPackage in sourcePackageEntry.value}
+    {sourcePackageEntry.key}Packages.push("{rootPackage}")
+    {/for}
+    sourceMap["{sourcePackageEntry.key}"] = {sourcePackageEntry.key}Packages;
+  {/for}
+
+    var srcMainPath = "{ideInfo:srcMainPath}";
+    var ideLinkType = "{ideInfo:ideLinkType}";
+    var ideClientLinkFormat = "{ideInfo:ideClientLinkFormat}";
+    var ideServerLinkEndpoint = "{ideInfo:ideServerLinkEndpoint}";
+    var devRootAppend = "{devRootAppend}";
+
+  {|
+
+    var langToExt = {"java": "java", "kotlin": "kt"};
+
+    function ideKnown() {
+      return (ideLinkType == "client") || (ideLinkType == "server");
+    }
+
+    // if the class is an application class, return the source language it was written in
+    // or null if the class is not an application class
+    function appClassLang(className) {
+      for (var key in sourceMap){
+        if (sourceMap.hasOwnProperty(key)) {
+          var packages = sourceMap[key];
+          for (var i = 0; i < packages.length; i++) {
+            if (className.startsWith(packages[i] + ".")) {
+              return key;
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    function openInIDE(className, line) {
+      var lang = appClassLang(className);
+      if (lang == null) {
+        console.error("Unable to determine file name of class: '" + className + "'");
+        return;
+      }
+      var effectiveClassName = className;
+      var dollarIndex = className.indexOf("$");
+      if (dollarIndex > -1) {
+        effectiveClassName = className.substring(0, dollarIndex);
+      }
+      var fileName = effectiveClassName.replaceAll(".", "/") + "." + langToExt[lang];
+      if (ideLinkType == "client") {
+        var location = ideClientLinkFormat.replace("{0}", srcMainPath + "/" + lang + "/" + fileName);
+        if (line) {
+           location = location.replace("{1}", line);
+        } else {
+            location = location.replace(":{1}", "");
+        }
+        window.location = location;
+        return;
+      } else if (ideLinkType == "server") {
+
+        var fd = new FormData();
+        fd.append('className', className);
+        fd.append('lang', lang);
+        fd.append('srcMainPath', srcMainPath);
+        if (line) {
+         fd.append('line', line);
+        }
+
+        $.ajax({
+          url: window.location.protocol + "//" + window.location.host + devRootAppend + ideServerLinkEndpoint,
+          data: fd,
+          processData: false,
+          contentType: false,
+          type: 'POST'
+        }).fail(function() {
+            console.error("Unable to open class: '" + className + "' in the IDE. See server logs for more information");
+        });
+      } else {
+         console.error("Unknown IDE link type: " + ideLinkType);
+      }
+    }
+  |}
+
   {#insert script /}
   </script>
  </body>

@@ -13,7 +13,6 @@ import java.util.function.Function;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
-import javax.inject.Singleton;
 
 import org.hamcrest.Matchers;
 import org.jboss.shrinkwrap.api.ShrinkWrap;
@@ -27,7 +26,8 @@ import grpc.health.v1.HealthOuterClass.HealthCheckResponse.ServingStatus;
 import grpc.health.v1.MutinyHealthGrpc;
 import io.grpc.BindableService;
 import io.grpc.ServerServiceDefinition;
-import io.quarkus.grpc.runtime.annotations.GrpcService;
+import io.quarkus.grpc.GrpcClient;
+import io.quarkus.grpc.GrpcService;
 import io.quarkus.test.QuarkusUnitTest;
 import io.smallrye.mutiny.Multi;
 
@@ -100,8 +100,7 @@ public class MicroProfileHealthEnabledTest {
     @ApplicationScoped
     static class HealthConsumer {
 
-        @Inject
-        @GrpcService("health-service")
+        @GrpcClient("health-service")
         MutinyHealthGrpc.MutinyHealthStub healthMutiny;
 
         public Multi<HealthOuterClass.HealthCheckResponse> getStatusStream(
@@ -112,7 +111,7 @@ public class MicroProfileHealthEnabledTest {
         }
     }
 
-    @Singleton
+    @GrpcService
     public static class FakeService implements BindableService {
 
         @Override

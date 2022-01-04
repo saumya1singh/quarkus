@@ -31,7 +31,7 @@ import io.restassured.parsing.Parser;
 import io.restassured.response.Response;
 
 @QuarkusTest
-@QuarkusTestResource(MongoTestResource.class)
+@QuarkusTestResource(MongoReplicaSetTestResource.class)
 class MongodbPanacheResourceTest {
     private static final TypeRef<List<BookDTO>> LIST_OF_BOOK_TYPE_REF = new TypeRef<List<BookDTO>>() {
     };
@@ -383,5 +383,10 @@ class MongodbPanacheResourceTest {
     @Test
     public void testMoreRepositoryFunctionalities() {
         get("/test/imperative/repository").then().statusCode(200);
+    }
+
+    @Test
+    public void testBug13301() {
+        get("/bugs/13301").then().statusCode(200);
     }
 }
